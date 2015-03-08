@@ -37,7 +37,7 @@ optional arguments:
 ```
 
 ###pip
-!(https://pypi.python.org/pypi/k8svp)[https://pypi.python.org/pypi/k8svp]
+(https://pypi.python.org/pypi/k8svp)[https://pypi.python.org/pypi/k8svp]
 
 ```
 "Programming Language :: Python",

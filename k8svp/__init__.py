@@ -10,6 +10,7 @@ from __future__ import division
 from __future__ import absolute_import
 from builtins import int
 from builtins import open
+
 from future import standard_library
 standard_library.install_aliases()
 from builtins import str
@@ -20,19 +21,17 @@ DEBUGMODE = False
 
 import time
 import os
+import requests
 import pickle
 import subprocess
 import json
-import urllib.request
-import urllib.parse
-import urllib.error
 import socket
 from tempfile import NamedTemporaryFile
 from argparse import ArgumentParser
 from multiprocessing import Pool, cpu_count
 from os.path import join, exists, dirname, expanduser
+from cmdssh import run_cmd, remote_cmd, remote_cmd_map, scp
 
-import paramiko
 import vagrant
 
 
@@ -105,49 +104,6 @@ def main():
         replacecloudconfig(options, vmhostosx)
     else:
         parser.print_help()
-
-
-def run_cmd(cmd, pr=False, shell=False, streamoutput=True, returnoutput=False):
-    """
-    @type cmd: str, unicode
-    @type pr: bool
-    @type shell: bool
-    @type streamoutput: bool
-    @type returnoutput: bool
-    @return: None
-    """
-    if not pr and DEBUGMODE:
-        pr = True
-
-    if pr:
-        print("\033[34mrun_cmd:", cmd, "\033[0m")
-
-    if shell is True:
-        return subprocess.call(cmd, shell=True)
-    else:
-        cmdl = [x for x in cmd.split(" ") if len(x.strip()) > 0]
-        p = subprocess.Popen(cmdl, cwd=os.getcwdu(), stderr=subprocess.PIPE, stdout=subprocess.PIPE)
-
-        if streamoutput and not returnoutput:
-            while p.poll() is None:
-                output = p.stdout.readline()
-
-                if len(output.strip()) > 0:
-                    print("\033[30m", output, "\033[0m", end=' ')
-
-        out, err = p.communicate()
-        if p.returncode != 0:
-            print("\033[33m", out, "\033[0m")
-            print("\033[31m", err, "\033[0m")
-        else:
-            if not returnoutput:
-                if len(out) > 0:
-                    print("\033[30m", out, "\033[0m")
-
-    if not returnoutput:
-        return p.returncode
-    else:
-        return out, err
 
 
 def get_num_instances():
@@ -272,108 +228,6 @@ def write_config_from_template(ntl, vmhostosx):
     open(config, "w").write(node)
 
 
-def remote_cmd(server, cmd):
-    """
-    @type server: str, unicode
-    @type cmd: str, unicode
-    @return: str
-    """
-    ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    ssh.connect(server, username='core')
-    si, so, se = ssh.exec_command(cmd)
-    so = so.read()
-    se = se.read()
-
-    if len(se) > 0:
-        so = "\033[31m " + se + "\033[0m"
-
-    return so
-
-
-def remote_cmd_map(servercmd):
-    """
-    @type servercmd: tuple
-    @return: str
-    """
-    server, cmd = servercmd
-    res = remote_cmd(server, cmd)
-    return server, res
-
-
-def scp(server, cmdtype, fp1, fp2):
-    """
-    @type server: str, unicode
-    @type cmdtype: str, unicode
-    @type fp1: str, unicode
-    @type fp2: str, unicode
-    @return: None
-    """
-
-    # put back known_hosts file
-    run_cmd("ssh -t core@" + server + " date")
-    transport = None
-    try:
-        hostname = server
-        port = 22
-        username = 'core'
-        password = ''
-        rsa_private_key = join(os.getcwdu(), "keys/secure/vagrantsecure")
-        transport = paramiko.Transport((hostname, port))
-        transport.start_client()
-        ki = paramiko.RSAKey.from_private_key_file(rsa_private_key)
-        agent = paramiko.Agent()
-        agent_keys = agent.get_keys() + (ki,)
-
-        if len(agent_keys) == 0:
-            raise AssertionError("scp: no keys", server)
-
-        authenticated = False
-
-        for key in agent_keys:
-            try:
-                transport.auth_publickey(username, key)
-                authenticated = True
-                break
-            except paramiko.SSHException:
-                pass
-
-        if not authenticated:
-            raise AssertionError("scp: not authenticated", server)
-
-        try:
-            host_keys = paramiko.util.load_host_keys(expanduser('~/.ssh/known_hosts'))
-        except IOError:
-            try:
-                host_keys = paramiko.util.load_host_keys(expanduser('~/ssh/known_hosts'))
-            except IOError:
-                print('*** ')
-                print("\033[31msftp: unable to open host keys file\033[0m")
-                host_keys = {}
-
-        if hostname in host_keys:
-            hostkeytype = list(host_keys[hostname].keys())[0]
-            hostkey = host_keys[hostname][hostkeytype]
-            if not transport.is_authenticated():
-                transport.connect(username=username, password=password, hostkey=hostkey)
-            else:
-                transport.open_session()
-
-            sftp = paramiko.SFTPClient.from_transport(transport)
-
-            if cmdtype == "put":
-                sftp.put(fp1, fp2)
-            else:
-                sftp.get(fp1, fp2)
-
-            return True
-    except Exception as e:
-        print("\033[31m", '*** Caught exception: %s: %s' % (e.__class__, e), "\033[0m")
-    finally:
-        if transport is not None:
-            transport.close()
-
-
 def localize(options, provider, vmhostosx):
     """
     @type options: str, unicode
@@ -404,7 +258,7 @@ def localize(options, provider, vmhostosx):
             if exists("./configscripts/setconfiglinux.sh"):
                 os.system("./configscripts/setconfiglinux.sh")
 
-        geoip = json.loads(urllib.request.urlopen("http://www.telize.com/geoip").read())
+        geoip = json.loads(requests.get("http://www.telize.com/geoip").text)
         capelle = geoip["isp"] == "Routit BV"
         if capelle is True:
             if options.localizemachine:
@@ -900,7 +754,8 @@ def replacecloudconfig(options, vmhostosx):
         cnt = 1
 
         for name in vmnames:
-            scp(name + '.a8.nl', "put", "configscripts/user-data" + str(cnt) + ".yml", "/tmp/vagrantfile-user-data"),
+            rsa_private_key = join(os.getcwdu(), "keys/secure/vagrantsecure")
+            scp(name + '.a8.nl', "put", "configscripts/user-data" + str(cnt) + ".yml", "/tmp/vagrantfile-user-data", rsa_private_key=rsa_private_key, username="core")
             cmd = "sudo cp /tmp/vagrantfile-user-data /var/lib/coreos-vagrant/vagrantfile-user-data"
             remote_cmd(name + '.a8.nl', cmd)
             print("\033[37m", name, "uploaded config, rebooting now", "\033[0m")

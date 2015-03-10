@@ -1,4 +1,4 @@
-# k8svp
+# k8vag
 Kubernetes Vagrant Provisioning and management script
 
 ###usage
@@ -37,7 +37,7 @@ optional arguments:
 ```
 
 ###pip
-[https://pypi.python.org/pypi/k8svp!](https://pypi.python.org/pypi/k8svp)
+[https://pypi.python.org/pypi/k8vag!](https://pypi.python.org/pypi/k8vag)
 
 ```
 "Programming Language :: Python",

@@ -14,7 +14,7 @@ from __future__ import absolute_import
 from future import standard_library
 standard_library.install_aliases()
 from unittester import *
-from k8vag import *
+from k8svag import *
 
 
 class K8svpTestCase(unittest.TestCase):

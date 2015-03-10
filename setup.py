@@ -6,14 +6,14 @@ license: GNU-GPL2
 """
 
 from setuptools import setup
-setup(name='k8vag',
+setup(name='k8svag',
       version='2',
       description='Kubernetes Vagrant Provisioning and management script',
-      url='https://github.com/erikdejonge/k8vag',
+      url='https://github.com/erikdejonge/k8svag',
       author='Erik de Jonge',
       author_email='erik@a8.nl',
       license='GPL',
-      packages=['k8vag'],
+      packages=['k8svag'],
       zip_safe=True,
       install_requires=['paramiko', 'python-vagrant', 'consoleprinter'],
       classifiers=[

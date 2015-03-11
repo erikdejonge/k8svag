@@ -331,7 +331,7 @@ def localize(options, provider, vmhostosx):
             write_config_from_template(ntl, vmhostosx)
 
             if options.localizemachine == 1:
-                p = subprocess.Popen(["/usr/bin/vagrant", "up"], cwd=os.getcwdu())
+                p = subprocess.Popen(["/usr/bin/vagrant", "up"], cwd=os.getcwd())
                 p.wait()
 
     return provider, vmhostosx
@@ -677,7 +677,7 @@ def provision_ansible(options):
             vmnames = get_vm_names()
 
             if targetvmname == "all":
-                cmd = "ansible-playbook -u core --inventory-file=" + join(os.getcwdu(), "hosts") + "  -u core --limit=all " + playbook
+                cmd = "ansible-playbook -u core --inventory-file=" + join(os.getcwd(), "hosts") + "  -u core --limit=all " + playbook
                 if password is not None:
                     cmd += " --vault-password-file " + f.name
 
@@ -742,7 +742,7 @@ def replacecloudconfig(options, vmhostosx):
 
     run_cmd("rm -f ./configscripts/user-data*")
     print("\033[31mReplace cloudconfiguration, checking vms are up\033[0m")
-    p = subprocess.Popen(["/usr/bin/vagrant", "up"], cwd=os.getcwdu())
+    p = subprocess.Popen(["/usr/bin/vagrant", "up"], cwd=os.getcwd())
     p.wait()
     vmnames = get_vm_names()
     knownhosts = join(join(expanduser("~"), ".ssh"), "known_hosts")
@@ -754,7 +754,7 @@ def replacecloudconfig(options, vmhostosx):
         cnt = 1
 
         for name in vmnames:
-            rsa_private_key = join(os.getcwdu(), "keys/secure/vagrantsecure")
+            rsa_private_key = join(os.getcwd(), "keys/secure/vagrantsecure")
             scp(name + '.a8.nl', "put", "configscripts/user-data" + str(cnt) + ".yml", "/tmp/vagrantfile-user-data", rsa_private_key=rsa_private_key, username="core")
             cmd = "sudo cp /tmp/vagrantfile-user-data /var/lib/coreos-vagrant/vagrantfile-user-data"
             remote_cmd(name + '.a8.nl', cmd)
@@ -763,7 +763,7 @@ def replacecloudconfig(options, vmhostosx):
             if options.wait:
                 print("wait: ", options.wait)
 
-            logpath = join(os.getcwdu(), "logs/" + name + "-serial.txt")
+            logpath = join(os.getcwd(), "logs/" + name + "-serial.txt")
 
             if exists(dirname(logpath)):
                 open(logpath, "w").write("")

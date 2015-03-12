@@ -7,7 +7,7 @@ license: GNU-GPL2
 
 from setuptools import setup
 setup(name='k8svag',
-      version='2',
+      version='3',
       description='Kubernetes Vagrant Provisioning and management script',
       url='https://github.com/erikdejonge/k8svag',
       author='Erik de Jonge',

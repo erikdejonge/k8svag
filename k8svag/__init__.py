@@ -1,109 +1,89 @@
-#!/usr/bin/env python3
+# !/usr/bin/env python3
 # coding=utf-8
 """
 Cluster management tool for setting up a coreos-vagrant cluster
 25-02-15: parallel execution of ssh using paramiko
 """
-from __future__ import print_function
-from __future__ import unicode_literals
-from __future__ import division
-from __future__ import absolute_import
-from builtins import int
-from builtins import open
-from future import standard_library
-standard_library.install_aliases()
-from builtins import str
-from builtins import input
-from builtins import range
 
 DEBUGMODE = False
 
 import time
 import os
-import requests
+
 import pickle
 import subprocess
-import json
+
 import socket
 from tempfile import NamedTemporaryFile
-from argparse import ArgumentParser
+
 from multiprocessing import Pool, cpu_count
 from os import path
 from cmdssh import run_cmd, remote_cmd, remote_cmd_map, scp
 
 import vagrant
 
-def localize(a,b,c):
-    pass
-def main():
-    """
-    main
-    """
-    parser = ArgumentParser(description="Vagrant controller, argument 'all' is whole cluster")
-    parser.add_argument("-s", "--ssh", dest="ssh", help="vagrant ssh", nargs='*')
-    parser.add_argument("-c", "--command", dest="command", help="execute command on cluster", nargs="*")
-    parser.add_argument("-f", "--status", dest="sshconfig", help="status of cluster or when name is given print config of ssh connections", nargs='*')
-    parser.add_argument("-u", "--up", dest="up", help="vagrant up")
-    parser.add_argument("-d", "--destroy", dest="destroy", help="vagrant destroy -f", action="store_true")
-    parser.add_argument("-k", "--halt", dest="halt", help="vagrant halt")
-    parser.add_argument("-q", "--provision", dest="provision", help="provision server with playbook (server:playbook)")
-    parser.add_argument("-r", "--reload", dest="reload", help="vagrant reload", nargs='*')
-    parser.add_argument("-a", "--replacecloudconfig", dest="replacecloudconfig", help="replacecloudconfigs and reboot", action="store_true")
-    parser.add_argument("-t", "--token", dest="token", help="print a new token", action="store_true")
-    parser.add_argument("-w", "--wait", dest="wait", help="wait between server (-1 == enter)")
-    parser.add_argument("-l", "--localizemachine", dest="localizemachine", help="apply specific configuration for a machine", nargs='*')
-    parser.add_argument("-p", "--parallel", dest="parallel", help="parallel execution", action="store_true")
-    parser.add_argument("-x", "--check", dest="check", help="ansible-playbook dry-run", action="store_true")
+# def main():
+#     """
+#     main
+#     """
+#     parser = ArgumentParser(description="Vagrant controller, argument 'all' is whole cluster")
+#     parser.add_argument("-s", "--ssh", dest="ssh", help="vagrant ssh", nargs='*')
+#     parser.add_argument("-c", "--command", dest="command", help="execute command on cluster", nargs="*")
+#     parser.add_argument("-f", "--status", dest="sshconfig", help="status of cluster or when name is given print config of ssh connections", nargs='*')
+#     parser.add_argument("-u", "--up", dest="up", help="vagrant up")
+#     parser.add_argument("-d", "--destroy", dest="destroy", help="vagrant destroy -f", action="store_true")
+#     parser.add_argument("-k", "--halt", dest="halt", help="vagrant halt")
+#     parser.add_argument("-q", "--provision", dest="provision", help="provision server with playbook (server:playbook)")
+#     parser.add_argument("-r", "--reload", dest="reload", help="vagrant reload", nargs='*')
+#     parser.add_argument("-a", "--replacecloudconfig", dest="replacecloudconfig", help="replacecloudconfigs and reboot", action="store_true")
+#     parser.add_argument("-t", "--token", dest="token", help="print a new token", action="store_true")
+#     parser.add_argument("-w", "--wait", dest="wait", help="wait between server (-1 == enter)")
+#     parser.add_argument("-l", "--localizemachine", dest="localizemachine", help="apply specific configuration for a machine", nargs='*')
+#     parser.add_argument("-p", "--parallel", dest="parallel", help="parallel execution", action="store_true")
+#     parser.add_argument("-x", "--check", dest="check", help="ansible-playbook dry-run", action="store_true")
+#     # echo "generate new token"
+#     options, unknown = parser.parse_known_args()
+#     if not path.exists("Vagrantfile"):
+#         print("== Error: no Vagrantfile in directory ==")
+#         return
+#     if not path.exists(".cl"):
+#         os.mkdir(".cl")
+#     provider = None
+#     vmhostosx = False
+#     if options.localizemachine is not None:
+#         options.localizemachine = list(options.localizemachine)
 
-    # echo "generate new token"
-    options, unknown = parser.parse_known_args()
+#         # noinspection PyTypeChecker
 
-    if not path.exists("Vagrantfile"):
-        print("== Error: no Vagrantfile in directory ==")
-        return
-
-    if not path.exists(".cl"):
-        os.mkdir(".cl")
-
-    provider = None
-    vmhostosx = False
-
-    if options.localizemachine is not None:
-        options.localizemachine = list(options.localizemachine)
-
-        # noinspection PyTypeChecker
-        if len(options.localizemachine) == 0:
-            options.localizemachine = 1
-        else:
-            options.localizemachine = 2
-
-    provider, vmhostosx = localize(options, provider, vmhostosx)
-
-    if options.localizemachine:
-        return
-
-    if options.token:
-        print_coreos_token_stdout()
-    elif options.ssh is not None:
-        connect_ssh(options)
-    elif options.sshconfig is not None:
-        sshconfig(options)
-    elif options.command:
-        remote_command(options)
-    elif options.up:
-        bring_vms_up(options, provider, vmhostosx)
-    elif options.destroy:
-        destroy_vagrant_cluster()
-    elif options.halt:
-        haltvagrantcluster(options)
-    elif options.provision:
-        provision_ansible(options)
-    elif options.reload:
-        reload_vagrant_cluster(options)
-    elif options.replacecloudconfig:
-        replacecloudconfig(options, vmhostosx)
-    else:
-        parser.print_help()
+#         if len(options.localizemachine) == 0:
+#             options.localizemachine = 1
+#         else:
+#             options.localizemachine = 2
+#     provider, vmhostosx = localize(options, provider, vmhostosx)
+#     if options.localizemachine:
+#         return
+#     if options.token:
+#         print_coreos_token_stdout()
+#     elif options.ssh is not None:
+#         connect_ssh(options)
+#     elif options.sshconfig is not None:
+#         sshconfig(options)
+#     elif options.command:
+#         remote_command(options)
+#     elif options.up:
+#         bring_vms_up(options, provider, vmhostosx)
+#     elif options.destroy:
+#         destroy_vagrant_cluster()
+#     elif options.halt:
+#         haltvagrantcluster(options)
+#     elif options.provision:
+#         provision_ansible(options)
+#     elif options.reload:
+#         reload_vagrant_cluster(options)
+#     elif options.replacecloudconfig:
+#         replacecloudconfig(options, vmhostosx)
+#     else:
+#         parser.print_help()
 
 
 def get_num_instances():
@@ -232,8 +212,11 @@ def write_config_from_template(ntl, vmhostosx):
 
 def prepare_config(func_extra_config=None):
     """
+    @type func_extra_config: str, unicode, None
+    @return: None
     """
     vmhostosx = False
+
     if str(os.popen("uname -a").read()).startswith("Darwin"):
         vmhostosx = True
 
@@ -251,12 +234,11 @@ def prepare_config(func_extra_config=None):
     if func_extra_config:
         func_extra_config()
 
-    return vmhostosx
+    return vmhostosx, provider
 
 
 def localize_config(vmhostosx):
     """
-    @type provider: str, unicode
     @type vmhostosx: str, unicode
     @return: None
     """
@@ -358,7 +340,7 @@ def connect_ssh(options):
 
                 while True:
                     try:
-                        if run_cmd(cmd, shell=True) != 0:
+                        if run_cmd(cmd) != 0:
                             print("connection lost, trying in 1 seconds (ctrl-c to quit)")
                             time.sleep(1)
                         else:
@@ -376,7 +358,7 @@ def connect_ssh(options):
 
                     while True:
                         try:
-                            if run_cmd(cmd, shell=True) != 0:
+                            if run_cmd(cmd) != 0:
                                 print("connection lost, trying in 1 seconds (ctrl-c to quit)")
                                 time.sleep(1)
                             else:
@@ -564,8 +546,8 @@ def bring_vms_up(options, provider, vmhostosx):
     if provider is None:
         raise AssertionError("provider is None")
 
-    run_cmd("ssh-add ~/.vagrant.d/insecure_private_key", shell=True)
-    run_cmd("ssh-add ./keys/secure/vagrantsecure;", shell=True)
+    run_cmd("ssh-add ~/.vagrant.d/insecure_private_key")
+    run_cmd("ssh-add ./keys/secure/vagrantsecure;")
     p = subprocess.Popen(["python", "-m", "SimpleHTTPServer", "8000"], stdout=open("/dev/null", "w"), stderr=open("/dev/null", "w"))
     try:
         numinstances = None
@@ -683,7 +665,7 @@ def provision_ansible(options):
                 if options.check:
                     cmd += " --check"
 
-                run_cmd(cmd, shell=True)
+                run_cmd(cmd)
             else:
                 for vmname in vmnames:
                     if targetvmname == vmname:
@@ -696,7 +678,7 @@ def provision_ansible(options):
                         if options.check:
                             cmd += " --check"
 
-                        run_cmd(cmd, shell=True)
+                        run_cmd(cmd)
                     else:
                         print("skipping", vmname)
         else:
@@ -793,7 +775,6 @@ def print_coreos_token_stdout():
     print_coreos_token_stdout
     """
     print("\033[36m" + str(get_token()) + "\033[0m")
-
 
 if __name__ == "__main__":
     main()

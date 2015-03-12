@@ -1,6 +1,14 @@
 # k8svag
 Kubernetes Vagrant Provisioning and management script
 
+###extraconfig
+The vagrant commands
+```
+cbx vagrant [command]
+```
+will look for a file name "extra_config_vagrant.py" and will execute the main function in order to configure.
+
+
 ###usage
 ```bash
 Usage: main.py [-h] [-s [SSH [SSH ...]]] [-c [COMMAND [COMMAND ...]]]

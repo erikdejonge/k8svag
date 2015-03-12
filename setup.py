@@ -15,7 +15,7 @@ setup(name='k8svag',
       license='GPL',
       packages=['k8svag'],
       zip_safe=True,
-      install_requires=['paramiko', 'python-vagrant', 'consoleprinter', 'cmdssh'],
+      #install_requires=['paramiko', 'python-vagrant', 'consoleprinter', 'cmdssh'],
       classifiers=[
           "Programming Language :: Python",
           "Programming Language :: Python :: 3",

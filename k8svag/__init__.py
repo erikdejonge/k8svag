@@ -9,13 +9,10 @@ DEBUGMODE = False
 
 import time
 import os
-
 import pickle
 import subprocess
-
 import socket
 from tempfile import NamedTemporaryFile
-
 from multiprocessing import Pool, cpu_count
 from os import path
 from cmdssh import run_cmd, remote_cmd, remote_cmd_map, scp
@@ -52,7 +49,6 @@ import vagrant
 #     vmhostosx = False
 #     if options.localizemachine is not None:
 #         options.localizemachine = list(options.localizemachine)
-
 #         # noinspection PyTypeChecker
 
 #         if len(options.localizemachine) == 0:
@@ -776,5 +772,6 @@ def print_coreos_token_stdout():
     """
     print("\033[36m" + str(get_token()) + "\033[0m")
 
+
 if __name__ == "__main__":
-    main()
+    print("cbx module can't be run standalone")

@@ -10,7 +10,6 @@ from __future__ import division
 from __future__ import absolute_import
 from builtins import int
 from builtins import open
-
 from future import standard_library
 standard_library.install_aliases()
 from builtins import str
@@ -29,12 +28,13 @@ import socket
 from tempfile import NamedTemporaryFile
 from argparse import ArgumentParser
 from multiprocessing import Pool, cpu_count
-from os.path import join, exists, dirname, expanduser
+from os import path
 from cmdssh import run_cmd, remote_cmd, remote_cmd_map, scp
 
 import vagrant
 
-
+def localize(a,b,c):
+    pass
 def main():
     """
     main
@@ -58,11 +58,11 @@ def main():
     # echo "generate new token"
     options, unknown = parser.parse_known_args()
 
-    if not exists("Vagrantfile"):
+    if not path.exists("Vagrantfile"):
         print("== Error: no Vagrantfile in directory ==")
         return
 
-    if not exists(".cl"):
+    if not path.exists(".cl"):
         os.mkdir(".cl")
 
     provider = None
@@ -121,9 +121,10 @@ def get_vm_names(retry=False):
     @return: None
     """
     try:
-        if exists(".cl/vmnames.pickle"):
+        if path.exists(".cl/vmnames.pickle"):
             l = sorted([x[0] for x in pickle.load(open(".cl/vmnames.pickle"))])
             return l
+
         vmnames = []
         numinstances = None
 
@@ -131,6 +132,7 @@ def get_vm_names(retry=False):
         try:
             numinstances = get_num_instances()
             osx = False
+
             if str(os.popen("uname -a").read()).startswith("Darwin"):
                 osx = True
 
@@ -228,113 +230,100 @@ def write_config_from_template(ntl, vmhostosx):
     open(config, "w").write(node)
 
 
-def localize(options, provider, vmhostosx):
+def prepare_config(func_extra_config=None):
     """
-    @type options: str, unicode
+    """
+    vmhostosx = False
+    if str(os.popen("uname -a").read()).startswith("Darwin"):
+        vmhostosx = True
+
+    if vmhostosx is True:
+        provider = "vmware_fusion"
+
+        if path.exists("./configscripts/setconfigosx.sh") is True:
+            os.system("./configscripts/setconfigosx.sh")
+    else:
+        provider = "vmware_workstation"
+
+        if path.exists("./configscripts/setconfiglinux.sh"):
+            os.system("./configscripts/setconfiglinux.sh")
+
+    if func_extra_config:
+        func_extra_config()
+
+    return vmhostosx
+
+
+def localize_config(vmhostosx):
+    """
     @type provider: str, unicode
     @type vmhostosx: str, unicode
     @return: None
     """
-    if options.destroy is False:
-        if options.localizemachine:
-            run_cmd('rm -Rf ".cl"')
-            run_cmd('rm -Rf "hosts"')
+    run_cmd('rm -Rf ".cl"')
+    run_cmd('rm -Rf "hosts"')
 
-        if str(os.popen("uname -a").read()).startswith("Darwin"):
-            vmhostosx = True
+    if vmhostosx is True:
+        print("\033[33mLocalized for OSX\033[0m")
+    else:
+        print("\033[33mLocalized for Linux\033[0m")
 
-        if options.localizemachine:
-            if vmhostosx is True:
-                print("\033[33mLocalized for OSX\033[0m")
-            else:
-                print("\033[33mLocalized for Linux\033[0m")
+    hosts = open("hosts", "w")
 
-        if vmhostosx is True:
-            provider = "vmware_fusion"
-            if exists("./configscripts/setconfigosx.sh") is True:
-                os.system("./configscripts/setconfigosx.sh")
-        else:
-            provider = "vmware_workstation"
-            if exists("./configscripts/setconfiglinux.sh"):
-                os.system("./configscripts/setconfiglinux.sh")
+    # for cf in get_vm_configs():
+    # hosts.write(cf["Host"] + " ansible_ssh_host=" + cf["HostName"] + " ansible_ssh_port=22\n")
+    for name in get_vm_names():
+        try:
+            hostip = str(socket.gethostbyname(name + ".a8.nl"))
+            hosts.write(name + " ansible_ssh_host=" + hostip + " ansible_ssh_port=22\n")
+        except socket.gaierror:
+            hosts.write(name + " ansible_ssh_host=" + name + ".a8.nl ansible_ssh_port=22\n")
 
-        geoip = json.loads(requests.get("http://www.telize.com/geoip").text)
-        capelle = geoip["isp"] == "Routit BV"
-        if capelle is True:
-            if options.localizemachine:
-                print("\033[31mActive8 Capelle\033[0m")
+    hosts.write("\n[masters]\n")
 
-            if exists("./configscripts/setcapelle.sh") is True:
-                os.system("./configscripts/setcapelle.sh")
-        else:
-            if options.localizemachine:
-                print("\033[31mHeemraad\033[0m")
+    for name in get_vm_names():
+        hosts.write(name + "\n")
+        break
 
-            if exists("./configscripts/setheemraad.sh") is True:
-                os.system("./configscripts/setheemraad.sh")
+    cnt = 0
+    hosts.write("\n[etcd]\n")
 
-        if options.localizemachine or options.provision or options.replacecloudconfig:
-            hosts = open("hosts", "w")
+    for name in get_vm_names():
+        if cnt == 1:
+            hosts.write(name + "\n")
 
-            # for cf in get_vm_configs():
-            # hosts.write(cf["Host"] + " ansible_ssh_host=" + cf["HostName"] + " ansible_ssh_port=22\n")
-            for name in get_vm_names():
-                try:
-                    hostip = str(socket.gethostbyname(name + ".a8.nl"))
-                    hosts.write(name + " ansible_ssh_host=" + hostip + " ansible_ssh_port=22\n")
-                except socket.gaierror:
-                    hosts.write(name + " ansible_ssh_host=" + name + ".a8.nl ansible_ssh_port=22\n")
+        cnt += 1
 
-            hosts.write("\n[masters]\n")
+    cnt = 0
+    hosts.write("\n[nodes]\n")
 
-            for name in get_vm_names():
-                hosts.write(name + "\n")
-                break
-            cnt = 0
-            hosts.write("\n[etcd]\n")
+    for name in get_vm_names():
+        if cnt > 0:
+            hosts.write(name + "\n")
 
-            for name in get_vm_names():
-                if cnt == 1:
-                    hosts.write(name + "\n")
+        cnt += 1
 
-                cnt += 1
-            cnt = 0
-            hosts.write("\n[nodes]\n")
+    hosts.write("\n[all]\n")
 
-            for name in get_vm_names():
-                if cnt > 0:
-                    hosts.write(name + "\n")
+    for name in get_vm_names():
+        hosts.write(name + "\n")
 
-                cnt += 1
+    hosts.write("\n[all_groups:children]\nmasters\netcd\nnodes\n")
+    hosts.write("\n[coreos]\n")
 
-            hosts.write("\n[all]\n")
+    for name in get_vm_names():
+        hosts.write(name + "\n")
 
-            for name in get_vm_names():
-                hosts.write(name + "\n")
-
-            hosts.write("\n[all_groups:children]\nmasters\netcd\nnodes\n")
-            hosts.write("\n[coreos]\n")
-
-            for name in get_vm_names():
-                hosts.write(name + "\n")
-
-            hosts.write("\n[coreos:vars]\n")
-            hosts.write("ansible_ssh_user=core\n")
-            hosts.write("ansible_python_interpreter=\"PATH=/home/core/bin:$PATH python\"\n")
-            hosts.flush()
-            hosts.close()
-
-        if options.localizemachine or options.replacecloudconfig or options.reload:
-            ntl = "configscripts/node.tmpl.yml"
-            write_config_from_template(ntl, vmhostosx)
-            ntl = "configscripts/master.tmpl.yml"
-            write_config_from_template(ntl, vmhostosx)
-
-            if options.localizemachine == 1:
-                p = subprocess.Popen(["/usr/bin/vagrant", "up"], cwd=os.getcwd())
-                p.wait()
-
-    return provider, vmhostosx
+    hosts.write("\n[coreos:vars]\n")
+    hosts.write("ansible_ssh_user=core\n")
+    hosts.write("ansible_python_interpreter=\"PATH=/home/core/bin:$PATH python\"\n")
+    hosts.flush()
+    hosts.close()
+    ntl = "configscripts/node.tmpl.yml"
+    write_config_from_template(ntl, vmhostosx)
+    ntl = "configscripts/master.tmpl.yml"
+    write_config_from_template(ntl, vmhostosx)
+    return True
 
 
 def connect_ssh(options):
@@ -346,6 +335,7 @@ def connect_ssh(options):
         options.ssh = options.ssh[0]
     else:
         options.ssh = 1
+
     index = None
     try:
         index = int(options.ssh)
@@ -354,6 +344,7 @@ def connect_ssh(options):
             index = 1
     except Exception as e:
         print(e)
+
     cnt = 0
     vmnames = get_vm_names()
 
@@ -431,7 +422,7 @@ def sshconfig(options):
             for name in vmnames:
                 cmd = "vagrant ssh-config " + name
                 try:
-                    if exists(".cl/" + name + ".sshconfig"):
+                    if path.exists(".cl/" + name + ".sshconfig"):
                         out = open(".cl/" + name + ".sshconfig").read()
                     else:
                         out, eout = run_cmd(cmd, returnoutput=True)
@@ -439,6 +430,7 @@ def sshconfig(options):
 
                         if len(eout) == 0:
                             open(".cl/" + name + ".sshconfig", "w").write(out)
+
                     res = ""
 
                     for row in out.split("\n"):
@@ -486,6 +478,7 @@ def remote_command(options):
     @return: None
     """
     server = None
+
     if len(options.command) == 1:
         options.command = options.command[0]
     elif len(options.command) == 2:
@@ -510,6 +503,7 @@ def remote_command(options):
 
             for name in vmnames:
                 cmd = options.command
+
                 if options.parallel is True:
                     commands.append((name + '.a8.nl', cmd))
                 else:
@@ -580,7 +574,9 @@ def bring_vms_up(options, provider, vmhostosx):
         except Exception as e:
             print("ignored")
             print(e)
+
         allnew = False
+
         if options.up == 'allnew':
             allnew = True
             options.up = 'all'
@@ -589,6 +585,7 @@ def bring_vms_up(options, provider, vmhostosx):
         if options.up == 'all':
             if numinstances is None:
                 cmd = "vagrant up"
+
                 if allnew is True:
                     cmd += " --provision"
 
@@ -599,6 +596,7 @@ def bring_vms_up(options, provider, vmhostosx):
 
                 for i in range(1, numinstances + 1):
                     name = "node" + str(i)
+
                     if vmhostosx is True:
                         name = "core" + str(i)
 
@@ -625,7 +623,7 @@ def destroy_vagrant_cluster():
     cmd = "vagrant destroy  -f"
     run_cmd(cmd)
 
-    if exists(".cl/vmnames.pickle"):
+    if path.exists(".cl/vmnames.pickle"):
         os.remove(".cl/vmnames.pickle")
         os.system("rm -Rf .cl")
 
@@ -673,11 +671,12 @@ def provision_ansible(options):
     print("\033[34mAnsible playbook:", playbook, "\033[0m")
     p = subprocess.Popen(["python", "-m", "SimpleHTTPServer", "8000"], stdout=open("/dev/null", "w"), stderr=open("/dev/null", "w"))
     try:
-        if exists("./hosts"):
+        if path.exists("./hosts"):
             vmnames = get_vm_names()
 
             if targetvmname == "all":
-                cmd = "ansible-playbook -u core --inventory-file=" + join(os.getcwd(), "hosts") + "  -u core --limit=all " + playbook
+                cmd = "ansible-playbook -u core --inventory-file=" + path.join(os.getcwd(), "hosts") + "  -u core --limit=all " + playbook
+
                 if password is not None:
                     cmd += " --vault-password-file " + f.name
 
@@ -690,6 +689,7 @@ def provision_ansible(options):
                     if targetvmname == vmname:
                         print("provisioning", vmname)
                         cmd = "ansible-playbook -u core -i ./hosts  -u core --limit=" + vmname + " " + playbook
+
                         if password is not None:
                             cmd += " --vault-password-file " + f.name
 
@@ -745,16 +745,16 @@ def replacecloudconfig(options, vmhostosx):
     p = subprocess.Popen(["/usr/bin/vagrant", "up"], cwd=os.getcwd())
     p.wait()
     vmnames = get_vm_names()
-    knownhosts = join(join(expanduser("~"), ".ssh"), "known_hosts")
+    knownhosts = path.join(path.join(path.expanduser("~"), ".ssh"), "known_hosts")
 
-    if exists(knownhosts):
+    if path.exists(knownhosts):
         os.remove(knownhosts)
 
     if len(vmnames) > 0:
         cnt = 1
 
         for name in vmnames:
-            rsa_private_key = join(os.getcwd(), "keys/secure/vagrantsecure")
+            rsa_private_key = path.join(os.getcwd(), "keys/secure/vagrantsecure")
             scp(name + '.a8.nl', "put", "configscripts/user-data" + str(cnt) + ".yml", "/tmp/vagrantfile-user-data", rsa_private_key=rsa_private_key, username="core")
             cmd = "sudo cp /tmp/vagrantfile-user-data /var/lib/coreos-vagrant/vagrantfile-user-data"
             remote_cmd(name + '.a8.nl', cmd)
@@ -763,10 +763,11 @@ def replacecloudconfig(options, vmhostosx):
             if options.wait:
                 print("wait: ", options.wait)
 
-            logpath = join(os.getcwd(), "logs/" + name + "-serial.txt")
+            logpath = path.join(os.getcwd(), "logs/" + name + "-serial.txt")
 
-            if exists(dirname(logpath)):
+            if path.exists(path.dirname(logpath)):
                 open(logpath, "w").write("")
+
             cmd = "sudo reboot"
             remote_cmd(name + '.a8.nl', cmd)
 

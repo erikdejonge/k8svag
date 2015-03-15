@@ -15,7 +15,7 @@ import socket
 from tempfile import NamedTemporaryFile
 from multiprocessing import Pool, cpu_count
 from os import path
-from cmdssh import run_cmd, remote_cmd, remote_cmd_map, scp
+from cmdssh import run_cmd, remote_cmd, remote_cmd_map, run_scp
 
 import vagrant
 
@@ -732,8 +732,9 @@ def replacecloudconfig(options, vmhostosx):
         cnt = 1
 
         for name in vmnames:
-            rsa_private_key = path.join(os.getcwd(), "keys/secure/vagrantsecure")
-            scp(name + '.a8.nl', "put", "configscripts/user-data" + str(cnt) + ".yml", "/tmp/vagrantfile-user-data", rsa_private_key=rsa_private_key, username="core")
+
+            # rsa_private_key = path.join(os.getcwd(), "keys/secure/vagrantsecure")
+            run_scp(server=name + '.a8.nl', cmdtype="put", fp1="configscripts/user-data" + str(cnt) + ".yml", fp2="/tmp/vagrantfile-user-data", username="core")
             cmd = "sudo cp /tmp/vagrantfile-user-data /var/lib/coreos-vagrant/vagrantfile-user-data"
             remote_cmd(name + '.a8.nl', cmd)
             print("\033[37m", name, "uploaded config, rebooting now", "\033[0m")

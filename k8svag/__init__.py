@@ -107,28 +107,28 @@ def unzip(source_filename, dest_dir):
     @type dest_dir: str
     @return: None
     """
+    zippath = os.path.join(dest_dir, source_filename)
 
-    with zipfile.ZipFile(source_filename) as zf:
+    if not os.path.exists(zippath):
+        console("zipfile doesn't exist", zippath, color="red")
+        raise FileNotFoundError(zippath)
+
+    with zipfile.ZipFile(zippath) as zf:
         for member in zf.infolist():
+            fdir = os.path.dirname(member.filename)
+            fdir = fdir.replace("k8svag-createproject-master", dest_dir)
+            fdir = fdir.lstrip("/")
 
-            # Path traversal defense copied from
-            # http://hg.python.org/cpython/file/tip/Lib/http/server.py#l789
-            print(member.filename)
-            words = member.filename.split('/')
-            path = dest_dir
-            for word in words[:-1]:
-                drive, word = os.path.splitdrive(word)
-                head, word = os.path.split(word)
+            if fdir and not os.path.exists(fdir):
+                os.makedirs(fdir)
 
-                if word in (os.curdir, os.pardir, ''):
-                    continue
+            fpath = member.filename.replace("k8svag-createproject-master", dest_dir)
+            fpath = fpath.lstrip("/")
+            zfiledata = zf.open(member.filename)
+            #open(fpath, "wb").write(zfiledata.read())
+            print(member)
 
-                path = os.path.join(path, word)
-            #print(path, member)
-            #zf.extract(member, path)
 
-        for fname in zf.namelist():
-            print(fname)
 def download(url, mypath):
     """
     @type url: str
@@ -161,7 +161,9 @@ def driver_vagrant(commandline):
         name = None
 
         for tname in commandline.args:
-            answer = query_yes_no_quit(question="projectname: " + tname)
+            answer = "yes"
+
+            # answer = query_yes_no_quit(question="projectname: " + tname)
 
             if answer is "yes":
                 name = tname
@@ -172,7 +174,7 @@ def driver_vagrant(commandline):
                 return
 
         if name is None:
-            name = input("Projectname? ")
+            name = input("projectname? ")
 
         if name:
             console("creating project: ", name, plaintext=True, color="green")

@@ -27,10 +27,10 @@ def run_commandline(parent=None):
     @type parent: Arguments, None
     @return: None
     """
-    commandline = VagrantArguments()
+    commandline = VagrantArguments(parent)
 
     if parent is not None:
-        commandline.add_parent(parent)
+        commandline.__add_parent(parent)
 
     driver_vagrant(commandline)
 
@@ -43,7 +43,7 @@ class VagrantArguments(BaseArguments):
     """
     MainArguments
     """
-    def __init__(self):
+    def __init__(self, parent=None):
         doc = """
             Vagrant cluster management
 
@@ -76,7 +76,7 @@ class VagrantArguments(BaseArguments):
         self.validcommands = ["check", "command", "destroy", "halt", "localizemachine", "provision", "reload", "replacecloudconfig", "ssh", "status", "token", "up", "kubernetes"]
         validateschema = Schema({'command': Use(self.validcommand)})
         self.command = ""
-        super().__init__(doc, validateschema)
+        super().__init__(doc, validateschema, parent)
 
 
 def driver_vagrant_help(commandline):

@@ -80,23 +80,25 @@ def driver_vagrant_help(commandline):
     @type commandline: VagrantArguments
     @return: None
     """
-    # noinspection PyUnresolvedReferences,PyUnresolvedReferences,PyPep8
-    if not "-h" in commandline.args and not "--help" in commandline.args:
+    if commandline.help is False:
         return False
 
-    helptext = "command: " + commandline.snake_case_class_name() + ":" + str(commandline.command)
-    console(helptext, plainprint=True, color="darkcyan")
+    helptext = None
+    cmdpath = "-" + commandline.get_command_path() + ": " + str(commandline.command)
+    console(cmdpath, plainprint=True, color="darkcyan")
 
     if commandline.command == "up":
         helptext = """
         Start all vm's in the cluster
         """
 
+
     if helptext is None:
-        return False
+        console("No help available", plainprint=True)
+
     else:
         console(helptext, plainprint=True)
-        return True
+    return True
 
 
 # noinspection PyUnreachableCode

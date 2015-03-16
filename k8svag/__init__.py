@@ -71,34 +71,8 @@ class VagrantArguments(BaseArguments):
         """
         self.validcommands = ["check", "command", "createproject", "destroy", "halt", "localizemachine", "provision", "reload", "replacecloudconfig", "ssh", "status", "token", "up", "kubernetes"]
         validateschema = Schema({'command': Use(self.validcommand)})
-        self.command = ""
+        self.set_command_help("up", "Start all vm's in the cluster")
         super().__init__(doc, validateschema, parent)
-
-
-def driver_vagrant_help(commandline):
-    """
-    @type commandline: VagrantArguments
-    @return: None
-    """
-    if commandline.help is False:
-        return False
-
-    helptext = None
-    cmdpath = "-" + commandline.get_command_path() + ": " + str(commandline.command)
-    console(cmdpath, plainprint=True, color="darkcyan")
-
-    if commandline.command == "up":
-        helptext = """
-        Start all vm's in the cluster
-        """
-
-
-    if helptext is None:
-        console("No help available", plainprint=True)
-
-    else:
-        console(helptext, plainprint=True)
-    return True
 
 
 # noinspection PyUnreachableCode
@@ -107,9 +81,6 @@ def driver_vagrant(commandline):
     @type commandline: VagrantArguments
     @return: None
     """
-    if driver_vagrant_help(commandline):
-        return
-
     console(commandline.for_print(), plainprint=True)
     return
     if not path.exists("Vagrantfile"):

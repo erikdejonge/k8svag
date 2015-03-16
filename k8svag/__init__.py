@@ -14,11 +14,9 @@ from builtins import open
 from builtins import str
 from builtins import input
 from builtins import int
-
 from future import standard_library
 standard_library.install_aliases()
 from builtins import object
-from past.utils import old_div
 from future import standard_library
 standard_library.install_aliases()
 
@@ -33,7 +31,6 @@ import pickle
 import subprocess
 import socket
 import zipfile
-
 from tempfile import NamedTemporaryFile
 from multiprocessing import Pool, cpu_count
 from os import path
@@ -41,37 +38,17 @@ from cmdssh import run_cmd, remote_cmd, remote_cmd_map, run_scp
 from consoleprinter import console
 from arguments import Schema, Use, BaseArguments
 
-STREAM = sys.stderr
-
-BAR_TEMPLATE = '%s[%s%s] %s/%s - %s\r'
-
-MILL_TEMPLATE = '%s %s %i/%i\r'
-
-DOTS_CHAR = '.'
-
-BAR_FILLED_CHAR = '#'
-BAR_EMPTY_CHAR = ' '
-
-MILL_CHARS = ['|', '/', '-', '\\']
-
-# How long to wait before recalculating the ETA
-ETA_INTERVAL = 1
-
-# How many intervals (excluding the current one) to calculate the simple moving
-# average
-ETA_SMA_WINDOW = 9
-
 
 def sizeof_fmt(num, suffix=''):
     """
-    @type num: str
+    @type num: int
     @type suffix: str
     @return: None
     """
     if num is None:
         return num
 
-    num = old_div(float(num), 1024)
+    num = float(num) // 1024
     for unit in ['Mi', 'Gi', 'Ti', 'Pi', 'Ei', 'Zi']:
         if abs(num) < 1024.0:
             return "%3.1f%s%s" % (num, unit, suffix)
@@ -102,7 +79,7 @@ class Bar(object):
         self.done()
         return False  # we're not suppressing exceptions
 
-    def __init__(self, label='', width=32, hide=None, empty_char=BAR_EMPTY_CHAR, filled_char=BAR_FILLED_CHAR, expected_size=None, every=1):
+    def __init__(self, label='', width=32, hide=None, empty_char=' ', filled_char='#', expected_size=None, every=1):
         """
         @type label: str
         @type width: int
@@ -118,10 +95,11 @@ class Bar(object):
         self.hide = hide
 
         # Only show bar in terminals by default (better for piping, logging etc.)
+        stream = sys.stderr
 
         if hide is None:
             try:
-                self.hide = not STREAM.isatty()
+                self.hide = not stream.isatty()
             except AttributeError:  # output does not support isatty()
                 self.hide = True
 
@@ -146,6 +124,16 @@ class Bar(object):
         @type count: str, None
         @return: None
         """
+        stream = sys.stderr
+        bar_template = '%s[%s%s] %s/%s - %s\r'
+
+        # How long to wait before recalculating the ETA
+        eta_interval = 1
+
+        # How many intervals (excluding the current one) to calculate the simple moving
+        # average
+        eta_sma_window = 9
+
         if count is not None:
             self.expected_size = count
 
@@ -154,23 +142,23 @@ class Bar(object):
 
         self.last_progress = progress
 
-        if (time.time() - self.etadelta) > ETA_INTERVAL:
+        if (time.time() - self.etadelta) > eta_interval:
             self.etadelta = time.time()
-            self.ittimes = self.ittimes[-ETA_SMA_WINDOW:] + [old_div(-(self.start - time.time()), (progress + 1))]
+            self.ittimes = self.ittimes[-eta_sma_window:] + [-(self.start - time.time()) // (progress + 1)]
             self.eta = sum(self.ittimes) // float(len(self.ittimes)) * (self.expected_size - progress)
-            self.etadisp = self.format_time(self.eta)
+            self.etadisp = self.format_time(int(self.eta))
 
         x = int(self.width * progress // self.expected_size)
 
         if not self.hide:
             if ((progress % self.every) == 0 or      # True every "every" updates
                     (progress == self.expected_size)):   # And when we're done
-                STREAM.write(BAR_TEMPLATE % (
+                stream.write(bar_template % (
                     self.label, self.filled_char * x,
                     self.empty_char * (self.width - x), sizeof_fmt(progress),
                     sizeof_fmt(self.expected_size), self.etadisp))
 
-                STREAM.flush()
+                stream.flush()
 
     def done(self):
         """
@@ -178,16 +166,18 @@ class Bar(object):
         """
         self.elapsed = time.time() - self.start
         elapsed_disp = self.format_time(self.elapsed)
+        stream = sys.stderr
+        bar_template = '%s[%s%s] %s/%s - %s\r'
 
         if not self.hide:
             # Print completed bar with elapsed time
-            STREAM.write(BAR_TEMPLATE % (
+            stream.write(bar_template % (
                 self.label, self.filled_char * self.width,
                 self.empty_char * 0, self.last_progress,
                 self.expected_size, elapsed_disp))
 
-            STREAM.write('\n')
-            STREAM.flush()
+            stream.write('\n')
+            stream.flush()
 
     @staticmethod
     def format_time(seconds):
@@ -198,7 +188,7 @@ class Bar(object):
         return time.strftime('%H:%M:%S', time.gmtime(seconds))
 
 
-def bar(it, label='', width=32, hide=None, empty_char=BAR_EMPTY_CHAR, filled_char=BAR_FILLED_CHAR, expected_size=None, every=1):
+def bar(it, label='', width=32, hide=None, empty_char=' ', filled_char='#', expected_size=None, every=1):
     """
     Progress iterator. Wrap your iterables with it.
     @type it: str
@@ -218,39 +208,19 @@ def bar(it, label='', width=32, hide=None, empty_char=BAR_EMPTY_CHAR, filled_cha
             mybar.show(i + 1)
 
 
-def dots(it, label='', hide=None, every=1):
-    """Progress iterator. Prints a dot for each item being iterated
-    :param it:
-    :param label:
-    :param hide:
-    :param every:
-    """
-    count = 0
-
-    if not hide:
-        STREAM.write(label)
-
-    for i, item in enumerate(it):
-        if not hide:
-            if i % every == 0:         # True every "every" updates
-                STREAM.write(DOTS_CHAR)
-                sys.stderr.flush()
-
-        count += 1
-        yield item
-
-    STREAM.write('\n')
-    STREAM.flush()
-
-
 def mill(it, label='', hide=None, expected_size=None, every=1):
-    """Progress iterator. Prints a mill while iterating over the items.
-    :param it:
-    :param label:
-    :param hide:
-    :param expected_size:
-    :param every:
     """
+    @type it: iterator
+    @type label: str
+    @type hide: str, None
+    @type expected_size: int, None
+    @type every: int
+    @return: None
+    """
+    stream = sys.stderr
+    mill_chars = ['|', '/', '-', '\\']
+    mill_template = '%s %s %i/%i\r'
+
     def _mill_char(_i):
         """
         @type _i: int
@@ -259,7 +229,7 @@ def mill(it, label='', hide=None, expected_size=None, every=1):
         if _i >= count:
             return ' '
         else:
-            return MILL_CHARS[(_i // every) % len(MILL_CHARS)]
+            return mill_chars[(_i // every) % len(mill_chars)]
 
     def _show(_i):
         """
@@ -269,10 +239,10 @@ def mill(it, label='', hide=None, expected_size=None, every=1):
         if not hide:
             if ((_i % every) == 0 or         # True every "every" updates
                     (_i == count)):            # And when we're done
-                STREAM.write(MILL_TEMPLATE % (
+                stream.write(mill_template % (
                     label, _mill_char(_i), _i, count))
 
-                STREAM.flush()
+                stream.flush()
     count = len(it) if expected_size is None else expected_size
 
     if count:
@@ -283,8 +253,8 @@ def mill(it, label='', hide=None, expected_size=None, every=1):
         _show(i + 1)
 
     if not hide:
-        STREAM.write('\n')
-        STREAM.flush()
+        stream.write('\n')
+        stream.flush()
 
 
 def unzip(source_filename, dest_dir):
@@ -511,9 +481,6 @@ def get_num_instances():
     v = open("Vagrantfile").read()
     numinstances = int(v[v.find("num_instances") + (v[v.find("num_instances"):].find("=")):].split("\n")[0].replace("=", "").strip())
     return numinstances
-
-
-"
 
 
 def get_vm_names(retry=False):

@@ -16,8 +16,143 @@ from tempfile import NamedTemporaryFile
 from multiprocessing import Pool, cpu_count
 from os import path
 from cmdssh import run_cmd, remote_cmd, remote_cmd_map, run_scp
+from consoleprinter import console
+from arguments import Schema, Use, BaseArguments
 
 import vagrant
+
+
+def run_commandline(parent=None):
+    """
+    @type parent: Arguments, None
+    @return: None
+    """
+    commandline = VagrantArguments()
+
+    if parent is not None:
+        commandline.add_parent(parent)
+
+    driver_vagrant(commandline)
+
+
+if __name__ == "__main__":
+    run_commandline()
+
+
+class VagrantArguments(BaseArguments):
+    """
+    MainArguments
+    """
+    def __init__(self):
+        doc = """
+            Vagrant cluster management
+
+            Usage:
+                cryptobox vagrant [options] [--] <command> [<args>...]
+
+            Options:
+                -h --help           Show this screen.
+                -p --parallel           Execute commands in parallel (ansible style).
+                -v --verbose            Verbose mode.
+                -w --wait=<ws>          Wait <ws> seconds between commands.
+                -d --vagrantdir=<vd>    Vagrants folder, home directory to execute commands in.
+
+            Commands:
+                check               Ansible-playbook dry-run
+                command             Execute command on cluster
+                createproject       Create a Coreos Kubernetes cluster in local directory
+                destroy             Destroy vagrant cluster (vagrant destroy -f)
+                halt                Halt vagrant cluster (vagrant halt)
+                localizemachine     Apply specific configuration for the host-machine
+                provision           Provision server with playbook (server:playbook)
+                reload              Reload cluster (vagrant reload)
+                replacecloudconfig  Replace all coreos-cloudconfigs and reboot
+                ssh                 Make ssh connection into specific machine
+                status              Status of cluster or machine
+                token               Print coreos token to stdout
+                up                  Bring cluster up
+                kubernetes          Kubernetes commands
+        """
+        self.validcommands = ["check", "command", "destroy", "halt", "localizemachine", "provision", "reload", "replacecloudconfig", "ssh", "status", "token", "up", "kubernetes"]
+        validateschema = Schema({'command': Use(self.validcommand)})
+        self.command = ""
+        super().__init__(doc, validateschema)
+
+
+def driver_vagrant_help(commandline):
+    """
+    @type commandline: VagrantArguments
+    @return: None
+    """
+    # noinspection PyUnresolvedReferences,PyUnresolvedReferences,PyPep8
+    if not "-h" in commandline.args and not "--help" in commandline.args:
+        return False
+
+    helptext = "command: " + commandline.snake_case_class_name() + ":" + str(commandline.command)
+    console(helptext, plainprint=True, color="darkcyan")
+
+    if commandline.command == "up":
+        helptext = """
+        Start all vm's in the cluster
+        """
+
+    if helptext is None:
+        return False
+    else:
+        console(helptext, plainprint=True)
+        return True
+
+
+# noinspection PyUnreachableCode
+def driver_vagrant(commandline):
+    """
+    @type commandline: VagrantArguments
+    @return: None
+    """
+    if driver_vagrant_help(commandline):
+        return
+
+    console(commandline.for_print(), plainprint=True)
+    return
+    if not path.exists("Vagrantfile"):
+        console("== Error: no Vagrantfile in directory ==")
+        return
+
+    if not path.exists(".cl"):
+        os.mkdir(".cl")
+
+    if commandline.command == "localizemachine":
+        commandline.localizemachine = list(commandline.commandline)
+
+        if len(commandline) == 0:
+            commandline.localizemachine = 1
+        else:
+            commandline.localizemachine = 2
+
+    func_extra_config = None
+    mod_extra_config = None
+    vagranthome = os.getcwd()
+    mod_extra_config_path = path.join(vagranthome, "extra_config_vagrant.py")
+
+    if os.path.exists(mod_extra_config_path):
+        mod_extra_config = __import__(mod_extra_config_path)
+
+    if mod_extra_config is not None:
+        func_extra_config = mod_extra_config.__main__
+
+    vmhostosx, provider = k8svag.prepare_config(func_extra_config)
+    provider, vmhostosx = k8svag.localize_config(vmhostosx)
+
+    if options.localizemachine or options.replacecloudconfig or options.reload:
+        ntl = "configscripts/node.tmpl.yml"
+        write_config_from_template(ntl, vmhostosx)
+        ntl = "configscripts/master.tmpl.yml"
+        write_config_from_template(ntl, vmhostosx)
+
+        if options.localizemachine == 1:
+            p = subprocess.Popen(["/usr/bin/vagrant", "up"], cwd=os.getcwdu())
+            p.wait()
+
 
 # def main():
 #     """
@@ -772,7 +907,3 @@ def print_coreos_token_stdout():
     print_coreos_token_stdout
     """
     print("\033[36m" + str(get_token()) + "\033[0m")
-
-
-if __name__ == "__main__":
-    print("cbx module can't be run standalone")

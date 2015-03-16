@@ -4,14 +4,36 @@
 Cluster management tool for setting up a coreos-vagrant cluster
 25-02-15: parallel execution of ssh using paramiko
 """
+from __future__ import print_function
+from __future__ import division
+from __future__ import unicode_literals
+from __future__ import absolute_import
+from builtins import super
+from builtins import range
+from builtins import open
+from builtins import str
+from builtins import input
+from builtins import int
+
+from future import standard_library
+standard_library.install_aliases()
+from builtins import object
+from past.utils import old_div
+from future import standard_library
+standard_library.install_aliases()
 
 DEBUGMODE = False
 
-import time
+import vagrant
+import requests
 import os
+import sys
+import time
 import pickle
 import subprocess
 import socket
+import zipfile
+
 from tempfile import NamedTemporaryFile
 from multiprocessing import Pool, cpu_count
 from os import path
@@ -19,7 +41,293 @@ from cmdssh import run_cmd, remote_cmd, remote_cmd_map, run_scp
 from consoleprinter import console
 from arguments import Schema, Use, BaseArguments
 
-import vagrant
+STREAM = sys.stderr
+
+BAR_TEMPLATE = '%s[%s%s] %s/%s - %s\r'
+
+MILL_TEMPLATE = '%s %s %i/%i\r'
+
+DOTS_CHAR = '.'
+
+BAR_FILLED_CHAR = '#'
+BAR_EMPTY_CHAR = ' '
+
+MILL_CHARS = ['|', '/', '-', '\\']
+
+# How long to wait before recalculating the ETA
+ETA_INTERVAL = 1
+
+# How many intervals (excluding the current one) to calculate the simple moving
+# average
+ETA_SMA_WINDOW = 9
+
+
+def sizeof_fmt(num, suffix=''):
+    """
+    @type num: str
+    @type suffix: str
+    @return: None
+    """
+    if num is None:
+        return num
+
+    num = old_div(float(num), 1024)
+    for unit in ['Mi', 'Gi', 'Ti', 'Pi', 'Ei', 'Zi']:
+        if abs(num) < 1024.0:
+            return "%3.1f%s%s" % (num, unit, suffix)
+
+        num /= 1024.0
+
+    return "%.1f%s%s" % (num, 'Yi', suffix)
+
+
+class Bar(object):
+    """
+    Bar
+    """
+    def __enter__(self):
+        """
+        __enter__
+        """
+        return self
+
+    # noinspection PyUnusedLocal
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """
+        @type exc_type: str
+        @type exc_val: str
+        @type exc_tb: str
+        @return: None
+        """
+        self.done()
+        return False  # we're not suppressing exceptions
+
+    def __init__(self, label='', width=32, hide=None, empty_char=BAR_EMPTY_CHAR, filled_char=BAR_FILLED_CHAR, expected_size=None, every=1):
+        """
+        @type label: str
+        @type width: int
+        @type hide: str, None
+        @type empty_char: float
+        @type filled_char: float
+        @type expected_size: int, None
+        @type every: int
+        @return: None
+        """
+        self.label = label
+        self.width = width
+        self.hide = hide
+
+        # Only show bar in terminals by default (better for piping, logging etc.)
+
+        if hide is None:
+            try:
+                self.hide = not STREAM.isatty()
+            except AttributeError:  # output does not support isatty()
+                self.hide = True
+
+        self.empty_char = empty_char
+        self.filled_char = filled_char
+        self.expected_size = expected_size
+        self.every = every
+        self.start = time.time()
+        self.ittimes = []
+        self.eta = 0
+        self.etadelta = time.time()
+        self.etadisp = self.format_time(self.eta)
+        self.last_progress = 0
+        self.elapsed = 0
+
+        if self.expected_size:
+            self.show(0)
+
+    def show(self, progress, count=None):
+        """
+        @type progress: int
+        @type count: str, None
+        @return: None
+        """
+        if count is not None:
+            self.expected_size = count
+
+        if self.expected_size is None:
+            raise Exception("expected_size not initialized")
+
+        self.last_progress = progress
+
+        if (time.time() - self.etadelta) > ETA_INTERVAL:
+            self.etadelta = time.time()
+            self.ittimes = self.ittimes[-ETA_SMA_WINDOW:] + [old_div(-(self.start - time.time()), (progress + 1))]
+            self.eta = sum(self.ittimes) // float(len(self.ittimes)) * (self.expected_size - progress)
+            self.etadisp = self.format_time(self.eta)
+
+        x = int(self.width * progress // self.expected_size)
+
+        if not self.hide:
+            if ((progress % self.every) == 0 or      # True every "every" updates
+                    (progress == self.expected_size)):   # And when we're done
+                STREAM.write(BAR_TEMPLATE % (
+                    self.label, self.filled_char * x,
+                    self.empty_char * (self.width - x), sizeof_fmt(progress),
+                    sizeof_fmt(self.expected_size), self.etadisp))
+
+                STREAM.flush()
+
+    def done(self):
+        """
+        done
+        """
+        self.elapsed = time.time() - self.start
+        elapsed_disp = self.format_time(self.elapsed)
+
+        if not self.hide:
+            # Print completed bar with elapsed time
+            STREAM.write(BAR_TEMPLATE % (
+                self.label, self.filled_char * self.width,
+                self.empty_char * 0, self.last_progress,
+                self.expected_size, elapsed_disp))
+
+            STREAM.write('\n')
+            STREAM.flush()
+
+    @staticmethod
+    def format_time(seconds):
+        """
+        @type seconds: int
+        @return: None
+        """
+        return time.strftime('%H:%M:%S', time.gmtime(seconds))
+
+
+def bar(it, label='', width=32, hide=None, empty_char=BAR_EMPTY_CHAR, filled_char=BAR_FILLED_CHAR, expected_size=None, every=1):
+    """
+    Progress iterator. Wrap your iterables with it.
+    @type it: str
+    @type label: str
+    @type width: int
+    @type hide: str, None
+    @type empty_char: float
+    @type filled_char: float
+    @type expected_size: int, None
+    @type every: int
+    @return: None
+    """
+    count = len(it) if expected_size is None else expected_size
+    with Bar(label=label, width=width, hide=hide, expected_size=count, every=every, empty_char=empty_char, filled_char=filled_char) as mybar:
+        for i, item in enumerate(it):
+            yield item
+            mybar.show(i + 1)
+
+
+def dots(it, label='', hide=None, every=1):
+    """Progress iterator. Prints a dot for each item being iterated
+    :param it:
+    :param label:
+    :param hide:
+    :param every:
+    """
+    count = 0
+
+    if not hide:
+        STREAM.write(label)
+
+    for i, item in enumerate(it):
+        if not hide:
+            if i % every == 0:         # True every "every" updates
+                STREAM.write(DOTS_CHAR)
+                sys.stderr.flush()
+
+        count += 1
+        yield item
+
+    STREAM.write('\n')
+    STREAM.flush()
+
+
+def mill(it, label='', hide=None, expected_size=None, every=1):
+    """Progress iterator. Prints a mill while iterating over the items.
+    :param it:
+    :param label:
+    :param hide:
+    :param expected_size:
+    :param every:
+    """
+    def _mill_char(_i):
+        """
+        @type _i: int
+        @return: None
+        """
+        if _i >= count:
+            return ' '
+        else:
+            return MILL_CHARS[(_i // every) % len(MILL_CHARS)]
+
+    def _show(_i):
+        """
+        @type _i: int
+        @return: None
+        """
+        if not hide:
+            if ((_i % every) == 0 or         # True every "every" updates
+                    (_i == count)):            # And when we're done
+                STREAM.write(MILL_TEMPLATE % (
+                    label, _mill_char(_i), _i, count))
+
+                STREAM.flush()
+    count = len(it) if expected_size is None else expected_size
+
+    if count:
+        _show(0)
+
+    for i, item in enumerate(it):
+        yield item
+        _show(i + 1)
+
+    if not hide:
+        STREAM.write('\n')
+        STREAM.flush()
+
+
+def unzip(source_filename, dest_dir):
+    """
+    @type source_filename: str
+    @type dest_dir: str
+    @return: None
+    """
+    with zipfile.ZipFile(source_filename) as zf:
+        for member in zf.infolist():
+
+            # Path traversal defense copied from
+            # http://hg.python.org/cpython/file/tip/Lib/http/server.py#l789
+            words = member.filename.split('/')
+            mypath = dest_dir
+            for word in words[:-1]:
+                drive, word = os.path.splitdrive(word)
+                head, word = os.path.split(word)
+
+                if word in (os.curdir, os.pardir, ''):
+                    continue
+
+                mypath = os.path.join(mypath, word)
+
+            mypath = mypath.replace("k8svag-createproject-master", "")
+            member.filename = member.filename.replace("k8svag-createproject-master", "")
+            zf.extract(member, mypath)
+
+
+def download(url, mypath):
+    """
+    @type url: str
+    @type mypath: str
+    @return: None
+    """
+    r = requests.get(url, stream=True)
+    with open(mypath, 'wb') as f:
+        total_length = int(r.headers.get('content-length'))
+
+        for chunk in bar(r.iter_content(chunk_size=1024), expected_size=(total_length // 1024) + 1):
+            if chunk:
+                f.write(chunk)
+                f.flush()
 
 
 def run_commandline(parent=None):
@@ -41,8 +349,9 @@ class VagrantArguments(BaseArguments):
     """
     def __init__(self, parent=None):
         """
+        @type parent: str, None
+        @return: None
         """
-
         self.localizemachine = None
         self.reload = None
         self.replacecloudconfig = None
@@ -81,7 +390,7 @@ class VagrantArguments(BaseArguments):
         self.validcommands = ["check", "command", "createproject", "destroy", "halt", "localizemachine", "provision", "reload", "replacecloudconfig", "ssh", "status", "token", "up", "kubernetes"]
         validateschema = Schema({'command': Use(self.validcommand)})
         self.set_command_help("up", "Start all vm's in the cluster")
-        super().__init__(doc, validateschema, parent)
+        super(VagrantArguments, self).__init__(doc, validateschema, parent=parent)
 
 
 # noinspection PyUnreachableCode
@@ -92,7 +401,6 @@ def driver_vagrant(commandline):
     """
     if hasattr(commandline, "help") and commandline.help is True:
         return
-
 
     if commandline.command is None:
         raise AssertionError("no command set")
@@ -106,10 +414,11 @@ def driver_vagrant(commandline):
 
     if not path.exists(".cl"):
         os.mkdir(".cl")
+
     console(commandline.for_print(), plainprint=True)
     func_extra_config = None
     mod_extra_config = None
-    vagranthome = os.getcwd()
+    vagranthome = os.getcwdu()
     mod_extra_config_path = path.join(vagranthome, "extra_config_vagrant.py")
 
     if os.path.exists(mod_extra_config_path):
@@ -202,6 +511,9 @@ def get_num_instances():
     v = open("Vagrantfile").read()
     numinstances = int(v[v.find("num_instances") + (v[v.find("num_instances"):].find("=")):].split("\n")[0].replace("=", "").strip())
     return numinstances
+
+
+"
 
 
 def get_vm_names(retry=False):
@@ -609,7 +921,7 @@ def remote_command(options):
                     if options.wait is not None:
                         if str(options.wait) == "-1":
                             try:
-                                iquit = input("continue (y/n): ")
+                                iquit = eval(input("continue (y/n): "))
 
                                 if iquit.strip() == "n":
                                     break
@@ -766,7 +1078,7 @@ def provision_ansible(options):
             vmnames = get_vm_names()
 
             if targetvmname == "all":
-                cmd = "ansible-playbook -u core --inventory-file=" + path.join(os.getcwd(), "hosts") + "  -u core --limit=all " + playbook
+                cmd = "ansible-playbook -u core --inventory-file=" + path.join(os.getcwdu(), "hosts") + "  -u core --limit=all " + playbook
 
                 if password is not None:
                     cmd += " --vault-password-file " + f.name
@@ -833,7 +1145,7 @@ def replacecloudconfig(options, vmhostosx):
 
     run_cmd("rm -f ./configscripts/user-data*")
     print("\033[31mReplace cloudconfiguration, checking vms are up\033[0m")
-    p = subprocess.Popen(["/usr/bin/vagrant", "up"], cwd=os.getcwd())
+    p = subprocess.Popen(["/usr/bin/vagrant", "up"], cwd=os.getcwdu())
     p.wait()
     vmnames = get_vm_names()
     knownhosts = path.join(path.join(path.expanduser("~"), ".ssh"), "known_hosts")
@@ -855,7 +1167,7 @@ def replacecloudconfig(options, vmhostosx):
             if options.wait:
                 print("wait: ", options.wait)
 
-            logpath = path.join(os.getcwd(), "logs/" + name + "-serial.txt")
+            logpath = path.join(os.getcwdu(), "logs/" + name + "-serial.txt")
 
             if path.exists(path.dirname(logpath)):
                 open(logpath, "w").write("")
@@ -866,7 +1178,7 @@ def replacecloudconfig(options, vmhostosx):
             if options.wait is not None:
                 if str(options.wait) == "-1":
                     try:
-                        iquit = input("\n\n---\npress enter to continue (q=quit): ")
+                        iquit = eval(input("\n\n---\npress enter to continue (q=quit): "))
                         if iquit.strip() == "q":
                             break
 

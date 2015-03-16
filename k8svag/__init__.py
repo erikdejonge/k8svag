@@ -81,6 +81,9 @@ def driver_vagrant(commandline):
     @type commandline: VagrantArguments
     @return: None
     """
+
+    if hasattr(commandline, "help") and commandline.help is True:
+        return
     console(commandline.for_print(), plainprint=True)
     return
     if not path.exists("Vagrantfile"):

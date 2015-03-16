@@ -16,7 +16,6 @@ from builtins import input
 from builtins import int
 from future import standard_library
 standard_library.install_aliases()
-from builtins import object
 from future import standard_library
 standard_library.install_aliases()
 
@@ -25,7 +24,6 @@ DEBUGMODE = False
 import vagrant
 import requests
 import os
-import sys
 import time
 import pickle
 import subprocess
@@ -35,269 +33,8 @@ from tempfile import NamedTemporaryFile
 from multiprocessing import Pool, cpu_count
 from os import path
 from cmdssh import run_cmd, remote_cmd, remote_cmd_map, run_scp
-from consoleprinter import console
+from consoleprinter import console, bar, query_yes_no_quit
 from arguments import Schema, Use, BaseArguments
-
-
-def sizeof_fmt(num, suffix=''):
-    """
-    @type num: int
-    @type suffix: str
-    @return: None
-    """
-    if num is None:
-        return num
-
-    num = float(num) // 1024
-    for unit in ['Mi', 'Gi', 'Ti', 'Pi', 'Ei', 'Zi']:
-        if abs(num) < 1024.0:
-            return "%3.1f%s%s" % (num, unit, suffix)
-
-        num /= 1024.0
-
-    return "%.1f%s%s" % (num, 'Yi', suffix)
-
-
-class Bar(object):
-    """
-    Bar
-    """
-    def __enter__(self):
-        """
-        __enter__
-        """
-        return self
-
-    # noinspection PyUnusedLocal
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """
-        @type exc_type: str
-        @type exc_val: str
-        @type exc_tb: str
-        @return: None
-        """
-        self.done()
-        return False  # we're not suppressing exceptions
-
-    def __init__(self, label='', width=32, hide=None, empty_char=' ', filled_char='#', expected_size=None, every=1):
-        """
-        @type label: str
-        @type width: int
-        @type hide: str, None
-        @type empty_char: float
-        @type filled_char: float
-        @type expected_size: int, None
-        @type every: int
-        @return: None
-        """
-        self.label = label
-        self.width = width
-        self.hide = hide
-
-        # Only show bar in terminals by default (better for piping, logging etc.)
-        stream = sys.stderr
-
-        if hide is None:
-            try:
-                self.hide = not stream.isatty()
-            except AttributeError:  # output does not support isatty()
-                self.hide = True
-
-        self.empty_char = empty_char
-        self.filled_char = filled_char
-        self.expected_size = expected_size
-        self.every = every
-        self.start = time.time()
-        self.ittimes = []
-        self.eta = 0
-        self.etadelta = time.time()
-        self.etadisp = self.format_time(self.eta)
-        self.last_progress = 0
-        self.elapsed = 0
-
-        if self.expected_size:
-            self.show(0)
-
-    def show(self, progress, count=None):
-        """
-        @type progress: int
-        @type count: str, None
-        @return: None
-        """
-        stream = sys.stderr
-        bar_template = '%s[%s%s] %s/%s - %s\r'
-
-        # How long to wait before recalculating the ETA
-        eta_interval = 1
-
-        # How many intervals (excluding the current one) to calculate the simple moving
-        # average
-        eta_sma_window = 9
-
-        if count is not None:
-            self.expected_size = count
-
-        if self.expected_size is None:
-            raise Exception("expected_size not initialized")
-
-        self.last_progress = progress
-
-        if (time.time() - self.etadelta) > eta_interval:
-            self.etadelta = time.time()
-            self.ittimes = self.ittimes[-eta_sma_window:] + [-(self.start - time.time()) // (progress + 1)]
-            self.eta = sum(self.ittimes) // float(len(self.ittimes)) * (self.expected_size - progress)
-            self.etadisp = self.format_time(int(self.eta))
-
-        x = int(self.width * progress // self.expected_size)
-
-        if not self.hide:
-            if ((progress % self.every) == 0 or      # True every "every" updates
-                    (progress == self.expected_size)):   # And when we're done
-                stream.write(bar_template % (
-                    self.label, self.filled_char * x,
-                    self.empty_char * (self.width - x), sizeof_fmt(progress),
-                    sizeof_fmt(self.expected_size), self.etadisp))
-
-                stream.flush()
-
-    def done(self):
-        """
-        done
-        """
-        self.elapsed = time.time() - self.start
-        elapsed_disp = self.format_time(self.elapsed)
-        stream = sys.stderr
-        bar_template = '%s[%s%s] %s/%s - %s\r'
-
-        if not self.hide:
-            # Print completed bar with elapsed time
-            stream.write(bar_template % (
-                self.label, self.filled_char * self.width,
-                self.empty_char * 0, self.last_progress,
-                self.expected_size, elapsed_disp))
-
-            stream.write('\n')
-            stream.flush()
-
-    @staticmethod
-    def format_time(seconds):
-        """
-        @type seconds: int
-        @return: None
-        """
-        return time.strftime('%H:%M:%S', time.gmtime(seconds))
-
-
-def bar(it, label='', width=32, hide=None, empty_char=' ', filled_char='#', expected_size=None, every=1):
-    """
-    Progress iterator. Wrap your iterables with it.
-    @type it: str
-    @type label: str
-    @type width: int
-    @type hide: str, None
-    @type empty_char: float
-    @type filled_char: float
-    @type expected_size: int, None
-    @type every: int
-    @return: None
-    """
-    count = len(it) if expected_size is None else expected_size
-    with Bar(label=label, width=width, hide=hide, expected_size=count, every=every, empty_char=empty_char, filled_char=filled_char) as mybar:
-        for i, item in enumerate(it):
-            yield item
-            mybar.show(i + 1)
-
-
-def mill(it, label='', hide=None, expected_size=None, every=1):
-    """
-    @type it: iterator
-    @type label: str
-    @type hide: str, None
-    @type expected_size: int, None
-    @type every: int
-    @return: None
-    """
-    stream = sys.stderr
-    mill_chars = ['|', '/', '-', '\\']
-    mill_template = '%s %s %i/%i\r'
-
-    def _mill_char(_i):
-        """
-        @type _i: int
-        @return: None
-        """
-        if _i >= count:
-            return ' '
-        else:
-            return mill_chars[(_i // every) % len(mill_chars)]
-
-    def _show(_i):
-        """
-        @type _i: int
-        @return: None
-        """
-        if not hide:
-            if ((_i % every) == 0 or         # True every "every" updates
-                    (_i == count)):            # And when we're done
-                stream.write(mill_template % (
-                    label, _mill_char(_i), _i, count))
-
-                stream.flush()
-    count = len(it) if expected_size is None else expected_size
-
-    if count:
-        _show(0)
-
-    for i, item in enumerate(it):
-        yield item
-        _show(i + 1)
-
-    if not hide:
-        stream.write('\n')
-        stream.flush()
-
-
-def unzip(source_filename, dest_dir):
-    """
-    @type source_filename: str
-    @type dest_dir: str
-    @return: None
-    """
-    with zipfile.ZipFile(source_filename) as zf:
-        for member in zf.infolist():
-
-            # Path traversal defense copied from
-            # http://hg.python.org/cpython/file/tip/Lib/http/server.py#l789
-            words = member.filename.split('/')
-            mypath = dest_dir
-            for word in words[:-1]:
-                drive, word = os.path.splitdrive(word)
-                head, word = os.path.split(word)
-
-                if word in (os.curdir, os.pardir, ''):
-                    continue
-
-                mypath = os.path.join(mypath, word)
-
-            mypath = mypath.replace("k8svag-createproject-master", "")
-            member.filename = member.filename.replace("k8svag-createproject-master", "")
-            zf.extract(member, mypath)
-
-
-def download(url, mypath):
-    """
-    @type url: str
-    @type mypath: str
-    @return: None
-    """
-    r = requests.get(url, stream=True)
-    with open(mypath, 'wb') as f:
-        total_length = int(r.headers.get('content-length'))
-
-        for chunk in bar(r.iter_content(chunk_size=1024), expected_size=(total_length // 1024) + 1):
-            if chunk:
-                f.write(chunk)
-                f.flush()
 
 
 def run_commandline(parent=None):
@@ -322,6 +59,7 @@ class VagrantArguments(BaseArguments):
         @type parent: str, None
         @return: None
         """
+        self.args = []
         self.localizemachine = None
         self.reload = None
         self.replacecloudconfig = None
@@ -342,25 +80,69 @@ class VagrantArguments(BaseArguments):
                 -d --vagrantdir=<vd>    Vagrants folder, home directory to execute commands in.
 
             Commands:
-                check               Ansible-playbook dry-run
-                clustercommand      Execute command on cluster
-                createproject       Create a Coreos Kubernetes cluster in local directory
-                destroy             Destroy vagrant cluster (vagrant destroy -f)
-                halt                Halt vagrant cluster (vagrant halt)
-                localizemachine     Apply specific configuration for the host-machine
-                ansibleplaybook     Provision server with ansible-playbook (server:playbook)
-                reload              Reload cluster (vagrant reload)
-                replacecloudconfig  Replace all coreos-cloudconfigs and reboot
-                ssh                 Make ssh connection into specific machine
-                status              Status of cluster or machine
-                coreostoken         Print coreos token to stdout
-                up                  Bring cluster up
-                kubernetes          Kubernetes commands
+                check                   Ansible-playbook dry-run
+                clustercommand          Execute command on cluster
+                createproject <name>    Create a Coreos Kubernetes cluster in local directory
+                destroy                 Destroy vagrant cluster (vagrant destroy -f)
+                halt                    Halt vagrant cluster (vagrant halt)
+                localizemachine         Apply specific configuration for the host-machine
+                ansibleplaybook         Provision server with ansible-playbook (server:playbook)
+                reload                  Reload cluster (vagrant reload)
+                replacecloudconfig      Replace all coreos-cloudconfigs and reboot
+                ssh                     Make ssh connection into specific machine
+                status                  Status of cluster or machine
+                coreostoken             Print coreos token to stdout
+                up                      Bring cluster up
+                kubernetes              Kubernetes commands
         """
         self.validcommands = ["check", "command", "createproject", "destroy", "halt", "localizemachine", "provision", "reload", "replacecloudconfig", "ssh", "status", "token", "up", "kubernetes"]
         validateschema = Schema({'command': Use(self.validcommand)})
         self.set_command_help("up", "Start all vm's in the cluster")
         super(VagrantArguments, self).__init__(doc, validateschema, parent=parent)
+
+
+def unzip(source_filename, dest_dir):
+    """
+    @type source_filename: str
+    @type dest_dir: str
+    @return: None
+    """
+
+    with zipfile.ZipFile(source_filename) as zf:
+        for member in zf.infolist():
+
+            # Path traversal defense copied from
+            # http://hg.python.org/cpython/file/tip/Lib/http/server.py#l789
+            print(member.filename)
+            words = member.filename.split('/')
+            path = dest_dir
+            for word in words[:-1]:
+                drive, word = os.path.splitdrive(word)
+                head, word = os.path.split(word)
+
+                if word in (os.curdir, os.pardir, ''):
+                    continue
+
+                path = os.path.join(path, word)
+            #print(path, member)
+            #zf.extract(member, path)
+
+        for fname in zf.namelist():
+            print(fname)
+def download(url, mypath):
+    """
+    @type url: str
+    @type mypath: str
+    @return: None
+    """
+    r = requests.get(url, stream=True)
+    with open(mypath, 'wb') as f:
+        total_length = int(r.headers.get('content-length'))
+
+        for chunk in bar(r.iter_content(chunk_size=1024), expected_size=(total_length / 1024) + 1):
+            if chunk:
+                f.write(chunk)
+                f.flush()
 
 
 # noinspection PyUnreachableCode
@@ -376,6 +158,41 @@ def driver_vagrant(commandline):
         raise AssertionError("no command set")
 
     if commandline.command == "createproject":
+        name = None
+
+        for tname in commandline.args:
+            answer = query_yes_no_quit(question="projectname: " + tname)
+
+            if answer is "yes":
+                name = tname
+                break
+            elif answer is "no":
+                break
+            else:
+                return
+
+        if name is None:
+            name = input("Projectname? ")
+
+        if name:
+            console("creating project: ", name, plaintext=True, color="green")
+
+            if not os.path.exists(name):
+                os.mkdir(name)
+            elif not os.path.isdir(name):
+                console("error: path is file: ", name, color="red", plaintext=True)
+                return
+            elif not len(os.listdir(name)) == 0:
+                console("error: path not empty: ", name, color="red", plaintext=True)
+                unzip("master.zip", name)
+                return
+
+            console("downloading latest version of k8s/coreos for vagrant", plaintext=True, color="blue")
+            download("https://github.com/erikdejonge/k8svag-createproject/archive/master.zip", os.path.join(name, "master.zip"))
+            unzip("master.zip", name)
+        else:
+            print("createproject failed: no name")
+
         return
 
     if not path.exists("Vagrantfile"):

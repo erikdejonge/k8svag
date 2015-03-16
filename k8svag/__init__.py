@@ -40,6 +40,15 @@ class VagrantArguments(BaseArguments):
     MainArguments
     """
     def __init__(self, parent=None):
+        """
+        """
+
+        self.localizemachine = None
+        self.reload = None
+        self.replacecloudconfig = None
+        self.commandline = None
+        self.command = None
+        self.createproject = None
         doc = """
             Vagrant cluster management
 
@@ -55,17 +64,17 @@ class VagrantArguments(BaseArguments):
 
             Commands:
                 check               Ansible-playbook dry-run
-                command             Execute command on cluster
+                clustercommand      Execute command on cluster
                 createproject       Create a Coreos Kubernetes cluster in local directory
                 destroy             Destroy vagrant cluster (vagrant destroy -f)
                 halt                Halt vagrant cluster (vagrant halt)
                 localizemachine     Apply specific configuration for the host-machine
-                provision           Provision server with playbook (server:playbook)
+                ansibleplaybook     Provision server with ansible-playbook (server:playbook)
                 reload              Reload cluster (vagrant reload)
                 replacecloudconfig  Replace all coreos-cloudconfigs and reboot
                 ssh                 Make ssh connection into specific machine
                 status              Status of cluster or machine
-                token               Print coreos token to stdout
+                coreostoken         Print coreos token to stdout
                 up                  Bring cluster up
                 kubernetes          Kubernetes commands
         """
@@ -81,26 +90,23 @@ def driver_vagrant(commandline):
     @type commandline: VagrantArguments
     @return: None
     """
-
     if hasattr(commandline, "help") and commandline.help is True:
         return
-    console(commandline.for_print(), plainprint=True)
-    return
+
+
+    if commandline.command is None:
+        raise AssertionError("no command set")
+
+    if commandline.command == "createproject":
+        return
+
     if not path.exists("Vagrantfile"):
         console("== Error: no Vagrantfile in directory ==")
         return
 
     if not path.exists(".cl"):
         os.mkdir(".cl")
-
-    if commandline.command == "localizemachine":
-        commandline.localizemachine = list(commandline.commandline)
-
-        if len(commandline) == 0:
-            commandline.localizemachine = 1
-        else:
-            commandline.localizemachine = 2
-
+    console(commandline.for_print(), plainprint=True)
     func_extra_config = None
     mod_extra_config = None
     vagranthome = os.getcwd()
@@ -112,16 +118,16 @@ def driver_vagrant(commandline):
     if mod_extra_config is not None:
         func_extra_config = mod_extra_config.__main__
 
-    vmhostosx, provider = k8svag.prepare_config(func_extra_config)
-    provider, vmhostosx = k8svag.localize_config(vmhostosx)
+    vmhostosx, provider = prepare_config(func_extra_config)
+    provider, vmhostosx = localize_config(vmhostosx)
 
-    if options.localizemachine or options.replacecloudconfig or options.reload:
+    if commandline.localizemachine or commandline.replacecloudconfig or commandline.reload:
         ntl = "configscripts/node.tmpl.yml"
         write_config_from_template(ntl, vmhostosx)
         ntl = "configscripts/master.tmpl.yml"
         write_config_from_template(ntl, vmhostosx)
 
-        if options.localizemachine == 1:
+        if commandline.localizemachine == 1:
             p = subprocess.Popen(["/usr/bin/vagrant", "up"], cwd=os.getcwdu())
             p.wait()
 

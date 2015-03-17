@@ -33,7 +33,7 @@ from tempfile import NamedTemporaryFile
 from multiprocessing import Pool, cpu_count
 from os import path
 from cmdssh import run_cmd, remote_cmd, remote_cmd_map, run_scp
-from consoleprinter import console, bar, query_yes_no_quit
+from consoleprinter import console, bar
 from arguments import Schema, Use, BaseArguments
 
 
@@ -115,23 +115,30 @@ def unzip(source_filename, dest_dir):
 
     with zipfile.ZipFile(zippath) as zf:
         for member in zf.infolist():
-            fdir = os.path.dirname(member.filename)
-            fdir = fdir.replace("k8svag-createproject-master", dest_dir)
-            fdir = fdir.lstrip("/")
+            if member.filename.endswith("/"):
+                fdir = member.filename
+                fdir = fdir.replace("k8svag-createproject-master", dest_dir)
 
-            if fdir and not os.path.exists(fdir):
-                os.makedirs(fdir)
+                if fdir and not os.path.exists(fdir):
+                    os.makedirs(fdir)
+                    console(fdir, color="green")
+                    zfiledata = zf.open(member.filename)
+                    console(dir(zfiledata))
+            else:
+                fpath = member.filename.replace("k8svag-createproject-master", dest_dir)
+                console(fpath, color="blue")
 
-            fpath = member.filename.replace("k8svag-createproject-master", dest_dir)
-            fpath = fpath.lstrip("/")
-            zfiledata = zf.open(member.filename)
-            #open(fpath, "wb").write(zfiledata.read())
-            print(member)
+                if fpath.endswith("/"):
+                    raise AssertionError("Trying to extract a directory, fails")
+
+            # zfiledata = zf.open(member.filename)
+            # #open(fpath, "wb").write(zfiledata.read())
+            # print(member)
 
 
 def download(url, mypath):
     """
-    @type url: str
+    @type url: str∂
     @type mypath: str
     @return: None
     """
@@ -145,7 +152,37 @@ def download(url, mypath):
                 f.flush()
 
 
-# noinspection PyUnreachableCode
+def delete_directory(dirpath, excluded_file_names):
+    """
+    @type dirpath: str
+    @type excluded_file_names: list, tuple
+    @return: int
+    """
+    for rootpath, dirs, files in os.walk(dirpath):
+        for f in files:
+            fp = os.path.join(rootpath, f)
+
+            for exname in excluded_file_names:
+                if not fp.endswith(exname):
+                    if os.path.exists(fp):
+                        os.remove(fp)
+
+    dirpaths = []
+
+    for rootpath, dirs, files in os.walk(dirpath):
+        dirpaths.append(rootpath)
+
+    dirpaths.sort(key=lambda x: len(x.split("/")))
+    dirpaths.reverse()
+
+    for rootpath in dirpaths:
+        if dirpath != rootpath:
+            if os.path.exists(rootpath):
+                os.rmdir(rootpath)
+
+    return len(list(os.walk(dirpath)))
+
+
 def driver_vagrant(commandline):
     """
     @type commandline: VagrantArguments
@@ -186,7 +223,9 @@ def driver_vagrant(commandline):
                 return
             elif not len(os.listdir(name)) == 0:
                 console("error: path not empty: ", name, color="red", plaintext=True)
-                unzip("master.zip", name)
+                assert(1 == delete_directory(name, ["master.zip"]))
+
+                # unzip("master.zip", name)
                 return
 
             console("downloading latest version of k8s/coreos for vagrant", plaintext=True, color="blue")

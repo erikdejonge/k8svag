@@ -202,7 +202,7 @@ def driver_vagrant(commandline):
         for tname in commandline.args:
             answer = "yes"
 
-            # answer = query_yes_no_quit(question="projectname: " + tname)
+            answer = query_yes_no_quit(question="projectname: " + tname)
 
             if answer is "yes":
                 name = tname

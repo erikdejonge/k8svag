@@ -115,6 +115,7 @@ def unzip(source_filename, dest_dir):
 
     with zipfile.ZipFile(zippath) as zf:
         for member in zf.infolist():
+
             if member.filename.endswith("/"):
                 fdir = member.filename
                 fdir = fdir.replace("k8svag-createproject-master", dest_dir)
@@ -123,7 +124,8 @@ def unzip(source_filename, dest_dir):
                     os.makedirs(fdir)
                     console(fdir, color="green")
                     zfiledata = zf.open(member.filename)
-                    console(dir(zfiledata))
+                    console(zfiledata)
+                    exit(1)
             else:
                 fpath = member.filename.replace("k8svag-createproject-master", dest_dir)
                 console(fpath, color="blue")
@@ -222,10 +224,10 @@ def driver_vagrant(commandline):
                 console("error: path is file: ", name, color="red", plaintext=True)
                 return
             elif not len(os.listdir(name)) == 0:
-                console("error: path not empty: ", name, color="red", plaintext=True)
+                #console("error: path not empty: ", name, color="red", plaintext=True)
                 assert(1 == delete_directory(name, ["master.zip"]))
 
-                # unzip("master.zip", name)
+                unzip("master.zip", name)
                 return
 
             console("downloading latest version of k8s/coreos for vagrant", plaintext=True, color="blue")

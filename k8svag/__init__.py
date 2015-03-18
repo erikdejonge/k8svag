@@ -22,7 +22,6 @@ standard_library.install_aliases()
 DEBUGMODE = False
 
 import vagrant
-import requests
 import os
 import time
 import pickle
@@ -33,8 +32,8 @@ from tempfile import NamedTemporaryFile
 from multiprocessing import Pool, cpu_count
 from os import path
 from cmdssh import run_cmd, remote_cmd, remote_cmd_map, run_scp
-from consoleprinter import console, bar
-from arguments import Schema, Use, BaseArguments
+from consoleprinter import console, query_yes_no
+from arguments import Schema, Use, BaseArguments, abspath, abort, warning, unzip, download, delete_directory, info, doinput
 
 
 def run_commandline(parent=None):
@@ -59,6 +58,8 @@ class VagrantArguments(BaseArguments):
         @type parent: str, None
         @return: None
         """
+        self.force = False
+        self.workingdir = None
         self.args = []
         self.localizemachine = None
         self.reload = None
@@ -76,8 +77,9 @@ class VagrantArguments(BaseArguments):
                 -h --help           Show this screen.
                 -p --parallel           Execute commands in parallel (ansible style).
                 -v --verbose            Verbose mode.
+                -f --force              Do not ask for confirmation
                 -w --wait=<ws>          Wait <ws> seconds between commands.
-                -d --vagrantdir=<vd>    Vagrants folder, home directory to execute commands in.
+                -d --workingdir=<wrkd>  Directory to execute commands in, default is current working dir.
 
             Commands:
                 check                   Ansible-playbook dry-run
@@ -92,7 +94,7 @@ class VagrantArguments(BaseArguments):
                 ssh                     Make ssh connection into specific machine
                 status                  Status of cluster or machine
                 coreostoken             Print coreos token to stdout
-                up                      Bring cluster up
+                up <name>               Bring cluster up
                 kubernetes              Kubernetes commands
         """
         self.validcommands = ["check", "command", "createproject", "destroy", "halt", "localizemachine", "provision", "reload", "replacecloudconfig", "ssh", "status", "token", "up", "kubernetes"]
@@ -101,88 +103,35 @@ class VagrantArguments(BaseArguments):
         super(VagrantArguments, self).__init__(doc, validateschema, parent=parent)
 
 
-def unzip(source_filename, dest_dir):
+def set_working_dir(commandline):
     """
-    @type source_filename: str
-    @type dest_dir: str
-    @return: None
+    @type commandline: VagrantArguments
     """
-    zippath = os.path.join(dest_dir, source_filename)
+    projectname = None
 
-    if not os.path.exists(zippath):
-        console("zipfile doesn't exist", zippath, color="red")
-        raise FileNotFoundError(zippath)
+    if commandline.workingdir is None:
+        for tname in commandline.args:
+            projectname = tname
+            break
 
-    with zipfile.ZipFile(zippath) as zf:
-        for member in zf.infolist():
+        if projectname is not None:
+            answer = query_yes_no("projectname ok?: " + projectname, force=commandline.force)
 
-            if member.filename.endswith("/"):
-                fdir = member.filename
-                fdir = fdir.replace("k8svag-createproject-master", dest_dir)
+            if answer == "yes":
+                commandline.workingdir = abspath(projectname)
 
-                if fdir and not os.path.exists(fdir):
-                    os.makedirs(fdir)
-                    console(fdir, color="green")
-                    zfiledata = zf.open(member.filename)
-                    console(zfiledata)
-                    exit(1)
-            else:
-                fpath = member.filename.replace("k8svag-createproject-master", dest_dir)
-                console(fpath, color="blue")
+    if commandline.workingdir is None:
+        commandline.workingdir = abspath(doinput("projectname? "))
 
-                if fpath.endswith("/"):
-                    raise AssertionError("Trying to extract a directory, fails")
+    if commandline.workingdir is not None and os.path.exists(commandline.workingdir):
+        info(commandline.command, "workingdir: " + commandline.workingdir)
+    else:
+        if not os.path.exists(commandline.workingdir):
+            abort(commandline.command, commandline.workingdir + " does not exist")
+        else:
+            abort(commandline.command, "no workingdir set")
 
-            # zfiledata = zf.open(member.filename)
-            # #open(fpath, "wb").write(zfiledata.read())
-            # print(member)
-
-
-def download(url, mypath):
-    """
-    @type url: str∂
-    @type mypath: str
-    @return: None
-    """
-    r = requests.get(url, stream=True)
-    with open(mypath, 'wb') as f:
-        total_length = int(r.headers.get('content-length'))
-
-        for chunk in bar(r.iter_content(chunk_size=1024), expected_size=(total_length / 1024) + 1):
-            if chunk:
-                f.write(chunk)
-                f.flush()
-
-
-def delete_directory(dirpath, excluded_file_names):
-    """
-    @type dirpath: str
-    @type excluded_file_names: list, tuple
-    @return: int
-    """
-    for rootpath, dirs, files in os.walk(dirpath):
-        for f in files:
-            fp = os.path.join(rootpath, f)
-
-            for exname in excluded_file_names:
-                if not fp.endswith(exname):
-                    if os.path.exists(fp):
-                        os.remove(fp)
-
-    dirpaths = []
-
-    for rootpath, dirs, files in os.walk(dirpath):
-        dirpaths.append(rootpath)
-
-    dirpaths.sort(key=lambda x: len(x.split("/")))
-    dirpaths.reverse()
-
-    for rootpath in dirpaths:
-        if dirpath != rootpath:
-            if os.path.exists(rootpath):
-                os.rmdir(rootpath)
-
-    return len(list(os.walk(dirpath)))
+    return commandline
 
 
 def driver_vagrant(commandline):
@@ -196,13 +145,16 @@ def driver_vagrant(commandline):
     if commandline.command is None:
         raise AssertionError("no command set")
 
+    console()
+    console("CoreOs Vagrant Kubernetes Cluster", plaintext=True, color="grey")
+    console("command:", commandline.command, plaintext=True, color="grey")
+    console()
+
     if commandline.command == "createproject":
         name = None
 
         for tname in commandline.args:
-            answer = "yes"
-
-            answer = query_yes_no_quit(question="projectname: " + tname)
+            answer = query_yes_no("projectname ok?: " + tname, force=commandline.force)
 
             if answer is "yes":
                 name = tname
@@ -213,63 +165,80 @@ def driver_vagrant(commandline):
                 return
 
         if name is None:
-            name = input("projectname? ")
+            name = doinput("projectname? ")
 
         if name:
-            console("creating project: ", name, plaintext=True, color="green")
+            info(commandline.command, "creating project: " + name)
 
             if not os.path.exists(name):
                 os.mkdir(name)
             elif not os.path.isdir(name):
-                console("error: path is file: ", name, color="red", plaintext=True)
+                abort(commandline.command, "workdir path is file")
                 return
             elif not len(os.listdir(name)) == 0:
-                #console("error: path not empty: ", name, color="red", plaintext=True)
-                assert(1 == delete_directory(name, ["master.zip"]))
+                warning("path not empty: " + name)
+                answerdel = query_yes_no(question="delete all files in directory?: " + name, default="no", force=commandline.force)
 
-                unzip("master.zip", name)
-                return
+                if answerdel == "yes":
+                    delete_directory(name, ["master.zip"])
+                else:
+                    abort(commandline.command, "path not empty")
+                    return
 
-            console("downloading latest version of k8s/coreos for vagrant", plaintext=True, color="blue")
-            download("https://github.com/erikdejonge/k8svag-createproject/archive/master.zip", os.path.join(name, "master.zip"))
-            unzip("master.zip", name)
+            info(commandline.command, "downloading latest version of k8s/coreos for vagrant")
+            zippath = os.path.join(name, "master.zip")
+
+            if not os.path.exists(zippath):
+                for cnt in range(1, 4):
+                    try:
+                        download("https://github.com/erikdejonge/k8svag-createproject/archive/master.zip", zippath)
+                        unzip("master.zip", name)
+                        break
+                    except zipfile.BadZipFile as zex:
+                        console(zex, " - try again, attempt:", cnt, color="orange")
         else:
-            print("createproject failed: no name")
+            abort(commandline.command, "no name")
 
         return
+    elif commandline.command == "var":
+        if not path.exists("Vagrantfile.tmpl.rb"):
+            console("== Error: no Vagrantfile in directory ==")
+            return
 
-    if not path.exists("Vagrantfile"):
-        console("== Error: no Vagrantfile in directory ==")
-        return
+        if not path.exists(".cl"):
+            os.mkdir(".cl")
 
-    if not path.exists(".cl"):
-        os.mkdir(".cl")
+        console(commandline.for_print(), plainprint=True)
+        func_extra_config = None
+        mod_extra_config = None
+        vagranthome = os.getcwdu()
+        mod_extra_config_path = path.join(vagranthome, "extra_config_vagrant.py")
 
-    console(commandline.for_print(), plainprint=True)
-    func_extra_config = None
-    mod_extra_config = None
-    vagranthome = os.getcwdu()
-    mod_extra_config_path = path.join(vagranthome, "extra_config_vagrant.py")
+        if os.path.exists(mod_extra_config_path):
+            mod_extra_config = __import__(mod_extra_config_path)
 
-    if os.path.exists(mod_extra_config_path):
-        mod_extra_config = __import__(mod_extra_config_path)
+        if mod_extra_config is not None:
+            func_extra_config = mod_extra_config.__main__
 
-    if mod_extra_config is not None:
-        func_extra_config = mod_extra_config.__main__
+        vmhostosx, provider = prepare_config(func_extra_config)
+        provider, vmhostosx = localize_config(vmhostosx)
 
-    vmhostosx, provider = prepare_config(func_extra_config)
-    provider, vmhostosx = localize_config(vmhostosx)
+        if commandline.localizemachine or commandline.replacecloudconfig or commandline.reload:
+            ntl = "configscripts/node.tmpl.yml"
+            write_config_from_template(ntl, vmhostosx)
+            ntl = "configscripts/master.tmpl.yml"
+            write_config_from_template(ntl, vmhostosx)
 
-    if commandline.localizemachine or commandline.replacecloudconfig or commandline.reload:
-        ntl = "configscripts/node.tmpl.yml"
-        write_config_from_template(ntl, vmhostosx)
-        ntl = "configscripts/master.tmpl.yml"
-        write_config_from_template(ntl, vmhostosx)
+            if commandline.localizemachine == 1:
+                p = subprocess.Popen(["/usr/bin/vagrant", "up"], cwd=os.getcwdu())
+                p.wait()
 
-        if commandline.localizemachine == 1:
-            p = subprocess.Popen(["/usr/bin/vagrant", "up"], cwd=os.getcwdu())
-            p.wait()
-
+    elif commandline.command == "up":
+        commandline = set_working_dir(commandline)
+        console(commandline)
+    else:
+        abort(commandline.command, "not implemented")
+        console(commandline)
 
 # def main():
 #     """
@@ -282,7 +251,7 @@ def driver_vagrant(commandline):
 #     parser.add_argument("-u", "--up", dest="up", help="vagrant up")
 #     parser.add_argument("-d", "--destroy", dest="destroy", help="vagrant destroy -f", action="store_true")
 #     parser.add_argument("-k", "--halt", dest="halt", help="vagrant halt")
-#     parser.add_argument("-q", "--provision", dest="provision", help="provision server with playbook (server:playbook)")
+#     parser.add_argument("-q", "--provision", dest="provision", help="provision server with playbook (server:playybook)")
 #     parser.add_argument("-r", "--reload", dest="reload", help="vagrant reload", nargs='*')
 #     parser.add_argument("-a", "--replacecloudconfig", dest="replacecloudconfig", help="replacecloudconfigs and reboot", action="store_true")
 #     parser.add_argument("-t", "--token", dest="token", help="print a new token", action="store_true")

@@ -118,13 +118,19 @@ def set_working_dir(commandline):
             break
 
         if projectname is not None:
-            answer = query_yes_no("projectname ok?: " + projectname, force=commandline.force)
+            answer = query_yes_no("workingdir ok?: " + abspath(os.path.join(os.getcwd(), projectname)), force=commandline.force)
 
             if answer == "yes":
                 commandline.workingdir = abspath(os.path.join(os.getcwd(), projectname))
 
     if commandline.workingdir is None:
-        commandline.workingdir = abspath(doinput("projectname? "))
+        vagrantfiletemplate = os.path.join(os.getcwd(), "Vagrantfile.tpl.rb")
+
+        if os.path.exists(vagrantfiletemplate):
+            commandline.workingdir = os.getcwd()
+        else:
+            commandline.workingdir = abspath(doinput("projectname? "))
+
         commandline.workingdir = abspath(os.path.join(os.getcwd(), commandline.workingdir))
 
     if commandline.workingdir is not None and os.path.exists(commandline.workingdir):
@@ -173,24 +179,6 @@ def preboot_config(commandline):
         console_warning("no Vagrantfile in directory")
         raise SystemExit()
 
-    numcpus = 2
-
-    if commandline.force is False:
-        numcpus = doinput("number of cpus on server (default=2)? ")
-        try:
-            numcpus = int(numcpus)
-        except ValueError:
-            numcpus = 2
-
-    vfp = open(vagrantfiletemplate, "r")
-    vf = vfp.read()
-    vfp.close()
-    vf = vf.replace("cpus = x", "cpus = " + str(numcpus))
-    open(vagrantfiletemplate, "w").write(vf)
-    raise SystemExit()
-
-    print(vf)
-
     if not path.exists(picklepath):
         os.mkdir(picklepath)
 
@@ -212,6 +200,20 @@ def preboot_config(commandline):
         raise AssertionError("localize_config was False")
 
     if commandline.command in ["createproject", "localizemachine", "replacecloudconfig", "reload", "command"]:
+        numcpus = 2
+
+        if commandline.force is False:
+            numcpus = doinput("number of cpus on server (default=2)? ")
+            try:
+                numcpus = int(numcpus)
+            except ValueError:
+                numcpus = 2
+
+        vfp = open(vagrantfiletemplate, "r")
+        vf = vfp.read()
+        vfp.close()
+        vf = vf.replace("cpus = x", "cpus = " + str(numcpus))
+        open(vagrantfiletemplate, "w").write(vf)
         ntl = "configscripts/node.tmpl.yml"
         write_config_from_template(commandline, ntl, vmhost)
         ntl = "configscripts/master.tmpl.yml"

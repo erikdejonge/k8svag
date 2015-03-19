@@ -97,7 +97,7 @@ class VagrantArguments(BaseArguments):
                 up <name>               Bring cluster up
                 kubernetes              Kubernetes commands
         """
-        self.validcommands = ["check", "command", "createproject", "destroy", "halt", "localizemachine", "provision", "reload", "replacecloudconfig", "ssh", "status", "token", "up", "kubernetes"]
+        self.validcommands = ["createproject", "up", "coreostoken"]
         validateschema = Schema({'command': Use(self.validcommand)})
         self.set_command_help("up", "Start all vm's in the cluster")
         super(VagrantArguments, self).__init__(doc, validateschema, parent=parent)
@@ -124,7 +124,8 @@ def set_working_dir(commandline):
         commandline.workingdir = abspath(doinput("projectname? "))
 
     if commandline.workingdir is not None and os.path.exists(commandline.workingdir):
-        info(commandline.command, "workingdir: " + commandline.workingdir)
+        desc = "workingdir: " + str(commandline.workingdir)
+        info(commandline.command, desc)
     else:
         if not os.path.exists(commandline.workingdir):
             abort(commandline.command, commandline.workingdir + " does not exist")
@@ -134,77 +135,25 @@ def set_working_dir(commandline):
     return commandline
 
 
-def driver_vagrant(commandline):
+def header(commandline):
     """
     @type commandline: VagrantArguments
     @return: None
     """
-    if hasattr(commandline, "help") and commandline.help is True:
-        return
-
-    if commandline.command is None:
-        raise AssertionError("no command set")
-
     console()
     console("CoreOs Vagrant Kubernetes Cluster", plaintext=True, color="grey")
     console("command:", commandline.command, plaintext=True, color="grey")
     console()
 
-    if commandline.command == "createproject":
-        name = None
 
-        for tname in commandline.args:
-            answer = query_yes_no("projectname ok?: " + tname, force=commandline.force)
-
-            if answer is "yes":
-                name = tname
-                break
-            elif answer is "no":
-                break
-            else:
-                return
-
-        if name is None:
-            name = doinput("projectname? ")
-
-        if name:
-            info(commandline.command, "creating project: " + name)
-
-            if not os.path.exists(name):
-                os.mkdir(name)
-            elif not os.path.isdir(name):
-                abort(commandline.command, "workdir path is file")
-                return
-            elif not len(os.listdir(name)) == 0:
-                warning("path not empty: " + name)
-                answerdel = query_yes_no(question="delete all files in directory?: " + name, default="no", force=commandline.force)
-
-                if answerdel == "yes":
-                    delete_directory(name, ["master.zip"])
-                else:
-                    abort(commandline.command, "path not empty")
-                    return
-
-            info(commandline.command, "downloading latest version of k8s/coreos for vagrant")
-            zippath = os.path.join(name, "master.zip")
-
-            if not os.path.exists(zippath):
-                for cnt in range(1, 4):
-                    try:
-                        download("https://github.com/erikdejonge/k8svag-createproject/archive/master.zip", zippath)
-                        unzip("master.zip", name)
-                        break
-                    except zipfile.BadZipFile as zex:
-                        console(zex, " - try again, attempt:", cnt, color="orange")
-        else:
-            abort(commandline.command, "no name")
-
-        return
-    elif commandline.command == "var":
-        if not path.exists("Vagrantfile.tmpl.rb"):
-            console("== Error: no Vagrantfile in directory ==")
-            return
-
+def preboot_config(commandline):
+    """
+    @type commandline: VagrantArguments
+    @return: None
+    """
+    if not path.exists("Vagrantfile.tmpl.rb"):
+        console("== Error: no Vagrantfile in directory ==")
+    else:
         if not path.exists(".cl"):
             os.mkdir(".cl")
 
@@ -220,22 +169,107 @@ def driver_vagrant(commandline):
         if mod_extra_config is not None:
             func_extra_config = mod_extra_config.__main__
 
-        vmhostosx, provider = prepare_config(func_extra_config)
-        provider, vmhostosx = localize_config(vmhostosx)
+        vmhost, provider = prepare_config(func_extra_config)
+        provider, vmhost = localize_config(vmhost)
 
         if commandline.localizemachine or commandline.replacecloudconfig or commandline.reload:
             ntl = "configscripts/node.tmpl.yml"
-            write_config_from_template(ntl, vmhostosx)
+            write_config_from_template(ntl, vmhost)
             ntl = "configscripts/master.tmpl.yml"
-            write_config_from_template(ntl, vmhostosx)
+            write_config_from_template(ntl, vmhost)
 
             if commandline.localizemachine == 1:
                 p = subprocess.Popen(["/usr/bin/vagrant", "up"], cwd=os.getcwdu())
                 p.wait()
 
+        return provider, vmhost
+
+
+def create_project_folder(commandline, name):
+    """
+    @type commandline: VagrantArguments
+    @type name: str
+    @return: None
+    """
+    info(commandline.command, "creating project: " + name)
+
+    if not os.path.exists(name):
+        os.mkdir(name)
+    elif not os.path.isdir(name):
+        abort(commandline.command, "workdir path is file")
+        raise SystemExit()
+    elif not len(os.listdir(name)) == 0:
+        warning(commandline.command, "path not empty: " + name)
+        answerdel = query_yes_no(question="delete all files in directory?: " + name, default="no", force=commandline.force)
+
+        if answerdel == "yes":
+            delete_directory(name, ["master.zip"])
+        else:
+            abort(commandline.command, "path not empty")
+            raise SystemExit()
+
+
+def download_and_unzip_k8svagrant_project(commandline, name):
+    """
+    @type commandline: VagrantArguments
+    @type name: str
+    @return: None
+    """
+    info(commandline.command, "downloading latest version of k8s/coreos for vagrant")
+    zippath = os.path.join(name, "master.zip")
+
+    if not os.path.exists(zippath):
+        for cnt in range(1, 4):
+            try:
+                download("https://github.com/erikdejonge/k8svag-createproject/archive/master.zip", zippath)
+                unzip("master.zip", name)
+                break
+            except zipfile.BadZipFile as zex:
+                console(zex, " - try again, attempt:", cnt, color="orange")
+
+
+def driver_vagrant(commandline):
+    """
+    @type commandline: VagrantArguments
+    @return: None
+    """
+    if hasattr(commandline, "help") and commandline.help is True:
+        return
+
+    if commandline.command is None:
+        raise AssertionError("no command set")
+
+    if commandline.command == "createproject":
+        header(commandline)
+        name = None
+
+        for tname in commandline.args:
+            answer = query_yes_no("projectname ok?: " + tname, force=commandline.force)
+
+            if answer is "yes":
+                name = tname
+                break
+            elif answer is "no":
+                break
+            else:
+                raise SystemExit()
+
+        if name is None:
+            name = doinput("projectname? ")
+
+        if name:
+            create_project_folder(commandline, name)
+            download_and_unzip_k8svagrant_project(commandline, name)
+        else:
+            abort(commandline.command, "no name")
+
+        return
     elif commandline.command == "up":
-        commandline = set_working_dir(commandline)
-        console(commandline)
+        set_working_dir(commandline)
+        provider, vmhost = preboot_config(commandline)
+        bring_vms_up(commandline, provider, vmhost)
+    elif commandline.command == "coreostoken":
+        print_coreos_token_stdout()
     else:
         abort(commandline.command, "not implemented")
         console(commandline)

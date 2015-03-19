@@ -260,6 +260,8 @@ def driver_vagrant(commandline):
         if name:
             create_project_folder(commandline, name)
             download_and_unzip_k8svagrant_project(commandline, name)
+            provider, vmhost = preboot_config(commandline)
+            console("provider:", provider)
         else:
             abort(commandline.command, "no name")
 

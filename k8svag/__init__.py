@@ -169,7 +169,6 @@ def preboot_config(commandline):
 
     vagrantfiletemplate = os.path.join(str(commandline.workingdir), "Vagrantfile.tpl.rb")
 
-
     if not path.exists(vagrantfiletemplate):
         console_warning("no Vagrantfile in directory")
         raise SystemExit()
@@ -182,19 +181,15 @@ def preboot_config(commandline):
             numcpus = int(numcpus)
         except ValueError:
             numcpus = 2
+
     vfp = open(vagrantfiletemplate, "r")
     vf = vfp.read()
     vfp.close()
-    print(vf.find("cpu "))
-
-    vf.replace("cpus = x", "cpus =  423423" + str(numcpus))
-    #print(vagrantfiletemplate)
-    #vf = "wtf"
+    vf = vf.replace("cpus = x", "cpus = " + str(numcpus))
     open(vagrantfiletemplate, "w").write(vf)
-
     raise SystemExit()
-    print(vf)
 
+    print(vf)
 
     if not path.exists(picklepath):
         os.mkdir(picklepath)
@@ -210,7 +205,6 @@ def preboot_config(commandline):
                 func_extra_config = mod_extra_config.__main__
         except ImportError:
             pass
-
 
     vmhost, provider = prepare_config(func_extra_config)
 

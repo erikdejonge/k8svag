@@ -32,7 +32,7 @@ from tempfile import NamedTemporaryFile
 from multiprocessing import Pool, cpu_count
 from os import path
 from cmdssh import run_cmd, remote_cmd, remote_cmd_map, run_scp
-from consoleprinter import console, query_yes_no
+from consoleprinter import console, query_yes_no, console_warning
 from arguments import Schema, Use, BaseArguments, abspath, abort, warning, unzip, download, delete_directory, info, doinput
 
 
@@ -46,7 +46,10 @@ def run_commandline(parent=None):
 
 
 if __name__ == "__main__":
-    run_commandline()
+    try:
+        run_commandline()
+    except KeyboardInterrupt:
+        print("bye")
 
 
 class VagrantArguments(BaseArguments):
@@ -151,38 +154,49 @@ def preboot_config(commandline):
     @type commandline: VagrantArguments
     @return: None
     """
-    if not path.exists("Vagrantfile.tmpl.rb"):
-        console("== Error: no Vagrantfile in directory ==")
-    else:
-        if not path.exists(".cl"):
-            os.mkdir(".cl")
+    if not hasattr(commandline, "workingdir"):
+        console_warning("workingdir not set")
+        raise SystemExit()
 
-        console(commandline.for_print(), plainprint=True)
-        func_extra_config = None
-        mod_extra_config = None
-        vagranthome = os.getcwdu()
-        mod_extra_config_path = path.join(vagranthome, "extra_config_vagrant.py")
+    if not commandline.workingdir is None:
+        console_warning("workingdir is None")
+        raise SystemExit()
 
-        if os.path.exists(mod_extra_config_path):
-            mod_extra_config = __import__(mod_extra_config_path)
+    vagrantfiletemplate = os.path.join(str(commandline.workingdir), "Vagrantfile.tpl.rb")
 
-        if mod_extra_config is not None:
-            func_extra_config = mod_extra_config.__main__
+    if not path.exists(vagrantfiletemplate):
+        console_warning("no Vagrantfile in directory")
+        raise SystemExit()
 
-        vmhost, provider = prepare_config(func_extra_config)
-        provider, vmhost = localize_config(vmhost)
+    if not path.exists(".cl"):
+        os.mkdir(".cl")
 
-        if commandline.localizemachine or commandline.replacecloudconfig or commandline.reload:
-            ntl = "configscripts/node.tmpl.yml"
-            write_config_from_template(ntl, vmhost)
-            ntl = "configscripts/master.tmpl.yml"
-            write_config_from_template(ntl, vmhost)
+    console(commandline.for_print(), plainprint=True)
+    func_extra_config = None
+    mod_extra_config = None
+    vagranthome = commandline.workingdir;
+    mod_extra_config_path = path.join(vagranthome, "extra_config_vagrant.py")
 
-            if commandline.localizemachine == 1:
-                p = subprocess.Popen(["/usr/bin/vagrant", "up"], cwd=os.getcwdu())
-                p.wait()
+    if os.path.exists(mod_extra_config_path):
+        mod_extra_config = __import__(mod_extra_config_path)
 
-        return provider, vmhost
+    if mod_extra_config is not None:
+        func_extra_config = mod_extra_config.__main__
+
+    vmhost, provider = prepare_config(func_extra_config)
+    provider, vmhost = localize_config(vmhost)
+
+    if commandline.localizemachine or commandline.replacecloudconfig or commandline.reload:
+        ntl = "configscripts/node.tmpl.yml"
+        write_config_from_template(ntl, vmhost)
+        ntl = "configscripts/master.tmpl.yml"
+        write_config_from_template(ntl, vmhost)
+
+        if commandline.localizemachine == 1:
+            p = subprocess.Popen(["/usr/bin/vagrant", "up"], cwd=commandline.workingdir)
+            p.wait()
+
+    return provider, vmhost
 
 
 def create_project_folder(commandline, name):
@@ -200,13 +214,23 @@ def create_project_folder(commandline, name):
         raise SystemExit()
     elif not len(os.listdir(name)) == 0:
         warning(commandline.command, "path not empty: " + name)
-        answerdel = query_yes_no(question="delete all files in directory?: " + name, default="no", force=commandline.force)
-
-        if answerdel == "yes":
+        if commandline.force is True:
+            default = "yes"
+        else:
+            default = "no"
+        answerdel = query_yes_no(question="delete all files in directory?: " + name, default=default, force=commandline.force)
+        if answerdel == "no":
+            
+            raise SystemExit()
+        elif answerdel == "yes":
             delete_directory(name, ["master.zip"])
         else:
-            abort(commandline.command, "path not empty")
-            raise SystemExit()
+            ans = query_yes_no(question="reuse previous downloaded file?: " + name, default="yes", force=commandline.force)
+            if ans == "no":
+                abort(commandline.command, "path not empty")
+                raise SystemExit()
+            else:
+                delete_directory(name, ["master.zip"])
 
 
 def download_and_unzip_k8svagrant_project(commandline, name):
@@ -225,7 +249,14 @@ def download_and_unzip_k8svagrant_project(commandline, name):
                 unzip("master.zip", name)
                 break
             except zipfile.BadZipFile as zex:
-                console(zex, " - try again, attempt:", cnt, color="orange")
+                if cnt > 2:
+                    console(zex, " - try again, attempt:", cnt, color="orange")
+    else:
+        try:
+            unzip("master.zip", name)
+        except zipfile.BadZipFile as zex:
+            download("https://github.com/erikdejonge/k8svag-createproject/archive/master.zip", zippath)
+            unzip("master.zip", name)
 
 
 def driver_vagrant(commandline):
@@ -259,6 +290,7 @@ def driver_vagrant(commandline):
 
         if name:
             create_project_folder(commandline, name)
+            set_working_dir(commandline)
             download_and_unzip_k8svagrant_project(commandline, name)
             provider, vmhost = preboot_config(commandline)
             console("provider:", provider)

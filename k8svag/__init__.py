@@ -169,9 +169,32 @@ def preboot_config(commandline):
 
     vagrantfiletemplate = os.path.join(str(commandline.workingdir), "Vagrantfile.tpl.rb")
 
+
     if not path.exists(vagrantfiletemplate):
         console_warning("no Vagrantfile in directory")
         raise SystemExit()
+
+    numcpus = 2
+
+    if commandline.force is False:
+        numcpus = doinput("number of cpus on server (default=2)? ")
+        try:
+            numcpus = int(numcpus)
+        except ValueError:
+            numcpus = 2
+    vfp = open(vagrantfiletemplate, "r")
+    vf = vfp.read()
+    vfp.close()
+    print(vf.find("cpu "))
+
+    vf.replace("cpus = x", "cpus =  423423" + str(numcpus))
+    #print(vagrantfiletemplate)
+    #vf = "wtf"
+    open(vagrantfiletemplate, "w").write(vf)
+
+    raise SystemExit()
+    print(vf)
+
 
     if not path.exists(picklepath):
         os.mkdir(picklepath)
@@ -188,7 +211,9 @@ def preboot_config(commandline):
         except ImportError:
             pass
 
+
     vmhost, provider = prepare_config(func_extra_config)
+
     if False is localize_config(commandline, vmhost):
         raise AssertionError("localize_config was False")
 
@@ -224,7 +249,7 @@ def create_project_folder(commandline, name):
         if commandline.force is True:
             default = "yes"
         else:
-            default = "no"
+            default = "yes"
 
         answerdel = query_yes_no(question="delete all files in directory?: " + name, default=default, force=commandline.force)
 
@@ -515,7 +540,7 @@ def write_config_from_template(commandline, ntl, vmhostosx):
 
     info(commandline.command, "master-private-ip: " + masterip)
     config = ntl.replace(".tmpl", "")
-    info(commandline.command, "writing: "+config)
+    info(commandline.command, "writing: " + config)
     open(config, "w").write(node)
 
 
@@ -533,8 +558,6 @@ def prepare_config(func_extra_config=None):
     if not os.path.exists("/config/tokenosx.txt") or not os.path.exists("/config/tokenlinux.txt"):
         write_new_tokens(vmhostosx)
 
-
-
     if vmhostosx is True:
         provider = "vmware_fusion"
 
@@ -546,12 +569,12 @@ def prepare_config(func_extra_config=None):
         if path.exists("./configscripts/setconfiglinux.sh"):
             os.system("souce ./configscripts/setconfiglinux.sh")
 
-    vf = open("Vagrantfile", "rt").read()
-    
     if func_extra_config:
         func_extra_config()
+
     if provider == "":
         console_error_exit("no provider set")
+
     retval = (vmhostosx, provider)
     return retval
 

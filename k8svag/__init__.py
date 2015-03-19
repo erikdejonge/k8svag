@@ -32,7 +32,7 @@ from tempfile import NamedTemporaryFile
 from multiprocessing import Pool, cpu_count
 from os import path
 from cmdssh import run_cmd, remote_cmd, remote_cmd_map, run_scp
-from consoleprinter import console, query_yes_no, console_warning
+from consoleprinter import console, query_yes_no, console_warning, console_exception, console_error_exit
 from arguments import Schema, Use, BaseArguments, abspath, abort, warning, unzip, download, delete_directory, info, doinput
 
 
@@ -121,10 +121,11 @@ def set_working_dir(commandline):
             answer = query_yes_no("projectname ok?: " + projectname, force=commandline.force)
 
             if answer == "yes":
-                commandline.workingdir = abspath(projectname)
+                commandline.workingdir = abspath(os.path.join(os.getcwd(), projectname))
 
     if commandline.workingdir is None:
         commandline.workingdir = abspath(doinput("projectname? "))
+        commandline.workingdir = abspath(os.path.join(os.getcwd(), commandline.workingdir))
 
     if commandline.workingdir is not None and os.path.exists(commandline.workingdir):
         desc = "workingdir: " + str(commandline.workingdir)
@@ -158,9 +159,15 @@ def preboot_config(commandline):
         console_warning("workingdir not set")
         raise SystemExit()
 
-    if not commandline.workingdir is None:
+    if commandline.workingdir is None:
         console_warning("workingdir is None")
         raise SystemExit()
+
+    os.chdir(str(commandline.workingdir))
+    picklepath = os.path.join(str(commandline.workingdir), ".cl")
+
+    if not os.path.exists(picklepath):
+        os.mkdir(picklepath)
 
     vagrantfiletemplate = os.path.join(str(commandline.workingdir), "Vagrantfile.tpl.rb")
 
@@ -168,25 +175,25 @@ def preboot_config(commandline):
         console_warning("no Vagrantfile in directory")
         raise SystemExit()
 
-    if not path.exists(".cl"):
-        os.mkdir(".cl")
+    if not path.exists(picklepath):
+        os.mkdir(picklepath)
 
-    console(commandline.for_print(), plainprint=True)
     func_extra_config = None
-    mod_extra_config = None
-    vagranthome = commandline.workingdir;
+    vagranthome = commandline.workingdir
     mod_extra_config_path = path.join(vagranthome, "extra_config_vagrant.py")
 
     if os.path.exists(mod_extra_config_path):
-        mod_extra_config = __import__(mod_extra_config_path)
-
-    if mod_extra_config is not None:
-        func_extra_config = mod_extra_config.__main__
+        try:
+            mod_extra_config = __import__(mod_extra_config_path)
+            if mod_extra_config is not None:
+                func_extra_config = mod_extra_config.__main__
+        except ImportError:
+            pass
 
     vmhost, provider = prepare_config(func_extra_config)
     provider, vmhost = localize_config(vmhost)
 
-    if commandline.localizemachine or commandline.replacecloudconfig or commandline.reload:
+    if commandline.localizemachine or commandline.replacecloudconfig or commandline.reload or commandline.createproject:
         ntl = "configscripts/node.tmpl.yml"
         write_config_from_template(ntl, vmhost)
         ntl = "configscripts/master.tmpl.yml"
@@ -214,18 +221,21 @@ def create_project_folder(commandline, name):
         raise SystemExit()
     elif not len(os.listdir(name)) == 0:
         warning(commandline.command, "path not empty: " + name)
+
         if commandline.force is True:
             default = "yes"
         else:
             default = "no"
+
         answerdel = query_yes_no(question="delete all files in directory?: " + name, default=default, force=commandline.force)
+
         if answerdel == "no":
-            
             raise SystemExit()
         elif answerdel == "yes":
             delete_directory(name, ["master.zip"])
         else:
-            ans = query_yes_no(question="reuse previous downloaded file?: " + name, default="yes", force=commandline.force)
+            ans = query_yes_no(question="reuse previous downloaded file?: " + name, force=commandline.force)
+
             if ans == "no":
                 abort(commandline.command, "path not empty")
                 raise SystemExit()
@@ -254,9 +264,14 @@ def download_and_unzip_k8svagrant_project(commandline, name):
     else:
         try:
             unzip("master.zip", name)
-        except zipfile.BadZipFile as zex:
-            download("https://github.com/erikdejonge/k8svag-createproject/archive/master.zip", zippath)
-            unzip("master.zip", name)
+        except zipfile.BadZipFile:
+            try:
+                download("https://github.com/erikdejonge/k8svag-createproject/archive/master.zip", zippath)
+                unzip("master.zip", name)
+            except zipfile.BadZipFile as zex:
+                console_exception(zex)
+                console_warning("could not unzip clusterfiles", print_stack=True)
+                raise SystemExit()
 
 
 def driver_vagrant(commandline):
@@ -309,7 +324,7 @@ def driver_vagrant(commandline):
         console(commandline)
 
 # def main():
-#     """
+# """
 #     main
 #     """
 #     parser = ArgumentParser(description="Vagrant controller, argument 'all' is whole cluster")
@@ -386,8 +401,14 @@ def get_vm_names(retry=False):
     @return: None
     """
     try:
-        if path.exists(".cl/vmnames.pickle"):
-            l = sorted([x[0] for x in pickle.load(open(".cl/vmnames.pickle"))])
+        cwd = os.getcwd()
+        picklepath = os.path.join(cwd, ".cl/vmnames.pickle")
+
+        if not os.path.exists(os.path.join(cwd, "Vagrantfile")):
+            return []
+
+        if path.exists(picklepath):
+            l = sorted([x[0] for x in pickle.load(open(picklepath))])
             return l
 
         vmnames = []
@@ -419,7 +440,7 @@ def get_vm_names(retry=False):
                 vmnames.append([vmname, v.conf(v.ssh_config(vm_name=vmname))])
 
         if len(vmnames) > 0:
-            pickle.dump(vmnames, open(".cl/vmnames.pickle", "w"))
+            pickle.dump(vmnames, open(picklepath, "wb"))
 
         l = sorted([x[0] for x in vmnames])
         return l
@@ -434,8 +455,10 @@ def get_vm_configs():
     """
     get_vm_configs
     """
+    cwd = os.getcwd()
+    picklepath = os.path.join(cwd, ".cl/vmnames.pickle")
     get_vm_names()
-    result = [x[1] for x in pickle.load(open(".cl/vmnames.pickle")) if x[1] is not None]
+    result = [x[1] for x in pickle.load(open(picklepath)) if x[1] is not None]
 
     if len(result) > 0:
         return result
@@ -449,7 +472,8 @@ def get_vm_configs():
             vmnames.append([vmname, v.conf(v.ssh_config(vm_name=vmname))])
 
         if len(vmnames) > 0:
-            pickle.dump(vmnames, open(".cl/vmnames.pickle", "w"))
+            picklepath = os.path.join(cwd, ".cl/vmnames.pickle")
+            pickle.dump(vmnames, open(picklepath, "wb"))
 
         return [x[1] for x in vmnames if x[1] is not None]
 
@@ -509,12 +533,12 @@ def prepare_config(func_extra_config=None):
         provider = "vmware_fusion"
 
         if path.exists("./configscripts/setconfigosx.sh") is True:
-            os.system("./configscripts/setconfigosx.sh")
+            os.system("source ./configscripts/setconfigosx.sh")
     else:
         provider = "vmware_workstation"
 
         if path.exists("./configscripts/setconfiglinux.sh"):
-            os.system("./configscripts/setconfiglinux.sh")
+            os.system("souce ./configscripts/setconfiglinux.sh")
 
     if func_extra_config:
         func_extra_config()
@@ -530,6 +554,9 @@ def localize_config(vmhostosx):
     run_cmd('rm -Rf ".cl"')
     run_cmd('rm -Rf "hosts"')
 
+    if not os.path.exists(".cl"):
+        os.mkdir(".cl")
+
     if vmhostosx is True:
         print("\033[33mLocalized for OSX\033[0m")
     else:
@@ -539,7 +566,9 @@ def localize_config(vmhostosx):
 
     # for cf in get_vm_configs():
     # hosts.write(cf["Host"] + " ansible_ssh_host=" + cf["HostName"] + " ansible_ssh_port=22\n")
-    for name in get_vm_names():
+    vmnames = get_vm_names()
+
+    for name in vmnames:
         try:
             hostip = str(socket.gethostbyname(name + ".a8.nl"))
             hosts.write(name + " ansible_ssh_host=" + hostip + " ansible_ssh_port=22\n")
@@ -548,14 +577,14 @@ def localize_config(vmhostosx):
 
     hosts.write("\n[masters]\n")
 
-    for name in get_vm_names():
+    for name in vmnames:
         hosts.write(name + "\n")
         break
 
     cnt = 0
     hosts.write("\n[etcd]\n")
 
-    for name in get_vm_names():
+    for name in vmnames:
         if cnt == 1:
             hosts.write(name + "\n")
 
@@ -564,7 +593,7 @@ def localize_config(vmhostosx):
     cnt = 0
     hosts.write("\n[nodes]\n")
 
-    for name in get_vm_names():
+    for name in vmnames:
         if cnt > 0:
             hosts.write(name + "\n")
 
@@ -572,13 +601,13 @@ def localize_config(vmhostosx):
 
     hosts.write("\n[all]\n")
 
-    for name in get_vm_names():
+    for name in vmnames:
         hosts.write(name + "\n")
 
     hosts.write("\n[all_groups:children]\nmasters\netcd\nnodes\n")
     hosts.write("\n[coreos]\n")
 
-    for name in get_vm_names():
+    for name in vmnames:
         hosts.write(name + "\n")
 
     hosts.write("\n[coreos:vars]\n")
@@ -586,7 +615,12 @@ def localize_config(vmhostosx):
     hosts.write("ansible_python_interpreter=\"PATH=/home/core/bin:$PATH python\"\n")
     hosts.flush()
     hosts.close()
-    ntl = "configscripts/node.tmpl.yml"
+    cwd = os.getcwd()
+    ntl = os.path.join(cwd, "configscripts/node.tmpl.yml")
+
+    if not os.path.exists(ntl):
+        console_error_exit("configscripts/node.tmpl.yml not found", print_stack=True)
+
     write_config_from_template(ntl, vmhostosx)
     ntl = "configscripts/master.tmpl.yml"
     write_config_from_template(ntl, vmhostosx)
@@ -889,9 +923,11 @@ def destroy_vagrant_cluster():
     """
     cmd = "vagrant destroy  -f"
     run_cmd(cmd)
+    cwd = os.getcwd()
+    picklepath = os.path.join(cwd, ".cl/vmnames.pickle")
 
-    if path.exists(".cl/vmnames.pickle"):
-        os.remove(".cl/vmnames.pickle")
+    if path.exists(picklepath):
+        os.remove(picklepath)
         os.system("rm -Rf .cl")
 
     run_cmd("rm -Rf .vagrant")
@@ -1002,13 +1038,29 @@ def replacecloudconfig(options, vmhostosx):
     token = get_token()
     print("\033[36mtoken:", token.strip(), "\033[0m")
 
-    if vmhostosx is True:
-        open("config/tokenosx.txt", "w").write(token)
-    else:
-        open("config/tokenlinux.txt", "w").write(token)
+    def tokenpath(arch):
+        """
+        @type arch: str
+        @return: None
+        """
+        cwd = os.getcwd()
+        configpath = os.path.join(cwd, "config")
 
-    run_cmd("rm -f ./configscripts/user-data*")
-    print("\033[31mReplace cloudconfiguration, checking vms are up\033[0m")
+        if not os.path.exists(configpath):
+            os.mkdir(configpath)
+
+        path = os.path.join(cwd, "config/token" + arch + ".txt")
+        return path
+
+    if vmhostosx is True:
+        tposx = tokenpath("osx")
+        open(tposx, "w").write(token)
+    else:
+        tlin = tokenpath("linux")
+        open(tlin, "w").write(token)
+
+    run_cmd("rm -f " + os.path.join(os.getcwd(), "./configscripts") + "/user-data*")
+    console("Replace cloudconfiguration, checking vms are up")
     p = subprocess.Popen(["/usr/bin/vagrant", "up"], cwd=os.getcwdu())
     p.wait()
     vmnames = get_vm_names()

@@ -144,10 +144,8 @@ def header(commandline):
     @type commandline: VagrantArguments
     @return: None
     """
-    console()
-    console("CoreOs Vagrant Kubernetes Cluster", plaintext=True, color="grey")
+    console(b'\xe2\x9a\xaa\xef\xb8\x8f'.decode() + "  CoreOs Vagrant Kubernetes Cluster", plaintext=True, color="blue")
     console("command:", commandline.command, plaintext=True, color="grey")
-    console()
 
 
 def preboot_config(commandline):
@@ -191,13 +189,14 @@ def preboot_config(commandline):
             pass
 
     vmhost, provider = prepare_config(func_extra_config)
-    provider, vmhost = localize_config(vmhost)
+    if False is localize_config(commandline, vmhost):
+        raise AssertionError("localize_config was False")
 
-    if commandline.localizemachine or commandline.replacecloudconfig or commandline.reload or commandline.createproject:
+    if commandline.command in ["createproject", "localizemachine", "replacecloudconfig", "reload", "command"]:
         ntl = "configscripts/node.tmpl.yml"
-        write_config_from_template(ntl, vmhost)
+        write_config_from_template(commandline, ntl, vmhost)
         ntl = "configscripts/master.tmpl.yml"
-        write_config_from_template(ntl, vmhost)
+        write_config_from_template(commandline, ntl, vmhost)
 
         if commandline.localizemachine == 1:
             p = subprocess.Popen(["/usr/bin/vagrant", "up"], cwd=commandline.workingdir)
@@ -496,8 +495,9 @@ def get_token():
     return token
 
 
-def write_config_from_template(ntl, vmhostosx):
+def write_config_from_template(commandline, ntl, vmhostosx):
     """
+    @type commandline: VagrantArguments
     @type ntl: str, unicode
     @type vmhostosx: bool
     @return: None
@@ -513,9 +513,9 @@ def write_config_from_template(ntl, vmhostosx):
         node = node.replace("<master-private-ip>", masterip)
         node = node.replace("<name-node>", "node1.a8.nl")
 
-    print("\033[36mmaster-private-ip:", masterip, "\033[0m")
+    info(commandline.command, "master-private-ip: " + masterip)
     config = ntl.replace(".tmpl", "")
-    print("\033[36mwriting:", config, "\033[0m")
+    info(commandline.command, "writing: "+config)
     open(config, "w").write(node)
 
 
@@ -525,9 +525,13 @@ def prepare_config(func_extra_config=None):
     @return: None
     """
     vmhostosx = False
+    provider = ""
 
     if str(os.popen("uname -a").read()).startswith("Darwin"):
         vmhostosx = True
+
+    if not os.path.exists("/config/tokenosx.txt") or not os.path.exists("/config/tokenlinux.txt"):
+        write_new_tokens(vmhostosx)
 
     if vmhostosx is True:
         provider = "vmware_fusion"
@@ -542,13 +546,16 @@ def prepare_config(func_extra_config=None):
 
     if func_extra_config:
         func_extra_config()
+    if provider == "":
+        console_error_exit("no provider set")
+    retval = (vmhostosx, provider)
+    return retval
 
-    return vmhostosx, provider
 
-
-def localize_config(vmhostosx):
+def localize_config(commandline, vmhostosx):
     """
-    @type vmhostosx: str, unicode
+    @type commandline: VagrantArguments
+    @type vmhostosx: bool
     @return: None
     """
     run_cmd('rm -Rf ".cl"')
@@ -558,9 +565,9 @@ def localize_config(vmhostosx):
         os.mkdir(".cl")
 
     if vmhostosx is True:
-        print("\033[33mLocalized for OSX\033[0m")
+        info(commandline.command, "Localized for OSX")
     else:
-        print("\033[33mLocalized for Linux\033[0m")
+        info(commandline.command, "Localized for Linux")
 
     hosts = open("hosts", "w")
 
@@ -621,9 +628,9 @@ def localize_config(vmhostosx):
     if not os.path.exists(ntl):
         console_error_exit("configscripts/node.tmpl.yml not found", print_stack=True)
 
-    write_config_from_template(ntl, vmhostosx)
+    write_config_from_template(commandline, ntl, vmhostosx)
     ntl = "configscripts/master.tmpl.yml"
-    write_config_from_template(ntl, vmhostosx)
+    write_config_from_template(commandline, ntl, vmhostosx)
     return True
 
 
@@ -1028,15 +1035,12 @@ def reload_vagrant_cluster(options):
         run_cmd("vagrant up " + str(options.reload))
 
 
-def replacecloudconfig(options, vmhostosx):
+def write_new_tokens(vmhostosx):
     """
-    @type options: argparse.Nam
-    espace
-    @type vmhostosx: str, unicode
+    @type vmhostosx: bool
     @return: None
     """
     token = get_token()
-    print("\033[36mtoken:", token.strip(), "\033[0m")
 
     def tokenpath(arch):
         """
@@ -1049,8 +1053,8 @@ def replacecloudconfig(options, vmhostosx):
         if not os.path.exists(configpath):
             os.mkdir(configpath)
 
-        path = os.path.join(cwd, "config/token" + arch + ".txt")
-        return path
+        path2 = os.path.join(cwd, "config/token" + arch + ".txt")
+        return path2
 
     if vmhostosx is True:
         tposx = tokenpath("osx")
@@ -1059,6 +1063,15 @@ def replacecloudconfig(options, vmhostosx):
         tlin = tokenpath("linux")
         open(tlin, "w").write(token)
 
+
+def replacecloudconfig(options, vmhostosx):
+    """
+    @type options: argparse.Nam
+    espace
+    @type vmhostosx: str, unicode
+    @return: None
+    """
+    write_new_tokens(vmhostosx)
     run_cmd("rm -f " + os.path.join(os.getcwd(), "./configscripts") + "/user-data*")
     console("Replace cloudconfiguration, checking vms are up")
     p = subprocess.Popen(["/usr/bin/vagrant", "up"], cwd=os.getcwdu())

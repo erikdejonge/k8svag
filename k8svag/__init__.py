@@ -533,6 +533,8 @@ def prepare_config(func_extra_config=None):
     if not os.path.exists("/config/tokenosx.txt") or not os.path.exists("/config/tokenlinux.txt"):
         write_new_tokens(vmhostosx)
 
+
+
     if vmhostosx is True:
         provider = "vmware_fusion"
 
@@ -544,6 +546,8 @@ def prepare_config(func_extra_config=None):
         if path.exists("./configscripts/setconfiglinux.sh"):
             os.system("souce ./configscripts/setconfiglinux.sh")
 
+    vf = open("Vagrantfile", "rt").read()
+    
     if func_extra_config:
         func_extra_config()
     if provider == "":

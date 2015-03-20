@@ -37,6 +37,7 @@ from cmdssh import run_cmd, remote_cmd, remote_cmd_map, run_scp
 from consoleprinter import console, query_yes_no, console_warning, console_exception, console_error_exit
 from arguments import Schema, Use, BaseArguments, abspath, abort, warning, unzip, download, delete_directory, info, doinput
 
+
 class VagrantArguments(BaseArguments):
     """
     MainArguments
@@ -47,7 +48,7 @@ class VagrantArguments(BaseArguments):
         @return: None
         """
         self.force = False
-        self.workingdir = None
+        self.__workingdir = None
         self.args = []
         self.localizemachine = None
         self.reload = None
@@ -90,6 +91,16 @@ class VagrantArguments(BaseArguments):
         self.set_command_help("up", "Start all vm's in the cluster")
         super(VagrantArguments, self).__init__(doc, validateschema, parent=parent)
 
+    @property
+    def workingdir(self):
+        return self.__workingdir
+
+    @workingdir.setter
+    def workingdir(self, v):
+        if self.workingdir is not None:
+            raise AssertionError("workingdir was already set", self.workingdir)
+        else:
+            self.__workingdir = v
 
 def run_commandline(parent=None):
     """
@@ -105,7 +116,6 @@ if __name__ == "__main__":
         run_commandline()
     except KeyboardInterrupt:
         print("bye")
-
 
 
 def set_working_dir(commandline):
@@ -156,7 +166,7 @@ def header(commandline):
     console("command:", commandline.command, plaintext=True, color="grey")
 
 
-def preboot_config(commandline):
+def configure_generic_cluster_files_for_this_machine(commandline):
     """
     @type commandline: VagrantArguments
     @return: None
@@ -176,70 +186,70 @@ def preboot_config(commandline):
         os.mkdir(picklepath)
 
     vagrantfile = os.path.join(str(commandline.workingdir), "Vagrantfile")
-    if not os.path.exists(vagrantfile):
-        if not path.exists(vagrantfile + ".tpl.rb"):
-            console_warning("no Vagrantfile in directory")
-            raise SystemExit()
 
-        if not path.exists(picklepath):
-            os.mkdir(picklepath)
+    if not path.exists(vagrantfile + ".tpl.rb"):
+        console_warning("no Vagrantfile in directory")
+        raise SystemExit()
 
-        func_extra_config = None
-        vagranthome = commandline.workingdir
-        mod_extra_config_path = path.join(vagranthome, "extra_config_vagrant.py")
+    if not path.exists(picklepath):
+        os.mkdir(picklepath)
 
-        if os.path.exists(mod_extra_config_path):
+    func_extra_config = None
+    vagranthome = commandline.workingdir
+    mod_extra_config_path = path.join(vagranthome, "extra_config_vagrant.py")
+
+    if os.path.exists(mod_extra_config_path):
+        try:
+            mod_extra_config = __import__(mod_extra_config_path)
+            if mod_extra_config is not None:
+                func_extra_config = mod_extra_config.__main__
+        except ImportError:
+            pass
+
+    vmhost, provider = prepare_config(func_extra_config)
+    info(commandline.command, vmhost)
+    info(commandline.command, provider)
+    if commandline.command in ["createproject", "localizemachine", "replacecloudconfig", "reload", "command"]:
+        numcpus = 2
+        gui = True
+        instances = 2
+
+        if commandline.force is False:
+            numcpus = doinput("number of cpus on server (default=2)?", default=2, force=commandline.force)
             try:
-                mod_extra_config = __import__(mod_extra_config_path)
-                if mod_extra_config is not None:
-                    func_extra_config = mod_extra_config.__main__
-            except ImportError:
-                pass
+                numcpus = int(numcpus)
+            except ValueError:
+                warning(commandline.command, "invalid input, resetting to t2")
+                numcpus = 2
 
-        vmhost, provider = prepare_config(func_extra_config)
-        info(commandline.command, vmhost)
-        info(commandline.command, provider)
-        if commandline.command in ["createproject", "localizemachine", "replacecloudconfig", "reload", "command"]:
-            numcpus = 2
-            gui = True
-            instances = 2
+            gui = query_yes_no("show vm gui?", default=True, force=commandline.force)
+            instances = doinput("number of server instances?", default=4, force=commandline.force)
+            try:
+                instances = int(instances)
+            except ValueError:
+                warning(commandline.command, "numcpusinvalid input, resetting to t2")
+                instances = 2
 
-            if commandline.force is False:
-                numcpus = doinput("number of cpus on server (default=2)?", default=2, force=commandline.force)
-                try:
-                    numcpus = int(numcpus)
-                except ValueError:
-                    warning(commandline.command, "invalid input, resetting to t2")
-                    numcpus = 2
+        vfp = open(vagrantfile)
+        vf = vfp.read()
+        vfp.close()
+        vf = vf.replace("cpus = x", "cpus = " + str(numcpus))
+        vf = vf.replace("cpus = x", "cpus = " + str(numcpus))
+        vf = vf.replace("$num_instances = x", "$num_instances = " + str(instances))
+        vf = vf.replace("$update_channel = 'beta'", "$update_channel = 'beta'")
+        vf = vf.replace("$vm_gui = x", "$vm_gui = " + str(gui).lower())
+        vf = vf.replace("$vm_memory = x", "$vm_memory = 1024")
+        vf = vf.replace("$vm_cpus = x", "$vm_cpus = " + str(numcpus))
+        open(vagrantfile, "w").write(vf)
+        ntl = "configscripts/node.tmpl.yml"
+        write_config_from_template(commandline, ntl, vmhost)
+        ntl = "configscripts/master.tmpl.yml"
+        write_config_from_template(commandline, ntl, vmhost)
 
-                gui = query_yes_no("show vm gui?", default=True, force=commandline.force)
-                instances = doinput("number of server instances?", default=4, force=commandline.force)
-                try:
-                    instances = int(instances)
-                except ValueError:
-                    warning(commandline.command, "numcpusinvalid input, resetting to t2")
-                    instances = 2
+    if False is localize_config(commandline, vmhost):
+        raise AssertionError("localize_config was False")
 
-            vfp = open(vagrantfile)
-            vf = vfp.read()
-            vfp.close()
-            vf = vf.replace("cpus = x", "cpus = " + str(numcpus))
-            vf = vf.replace("cpus = x", "cpus = " + str(numcpus))
-            vf = vf.replace("$num_instances = x", "$num_instances = " + str(instances))
-            vf = vf.replace("$update_channel = 'beta'", "$update_channel = 'beta'")
-            vf = vf.replace("$vm_gui = x", "$vm_gui = " + str(gui).lower())
-            vf = vf.replace("$vm_memory = x", "$vm_memory = 1024")
-            vf = vf.replace("$vm_cpus = x", "$vm_cpus = " + str(numcpus))
-            open(vagrantfile, "w").write(vf)
-            ntl = "configscripts/node.tmpl.yml"
-            write_config_from_template(commandline, ntl, vmhost)
-            ntl = "configscripts/master.tmpl.yml"
-            write_config_from_template(commandline, ntl, vmhost)
-
-        if False is localize_config(commandline, vmhost):
-            raise AssertionError("localize_config was False")
-
-
+    return provider, vmhost
 
 
 def create_project_folder(commandline, name):
@@ -304,6 +314,24 @@ def download_and_unzip_k8svagrant_project(commandline, name):
                 raise SystemExit()
 
 
+def get_argument_project_name(commandline):
+    tname = None
+
+    for tnameiter in commandline.args:
+        tname = tnameiter
+        break
+
+    return tname
+
+
+def run_vagrant_starting_procedure(provider):
+    """
+    @type provider: str
+    @return: None
+    """
+    run_cmd("vagrant box update")
+
+
 def driver_vagrant(commandline):
     """
     @type commandline: VagrantArguments
@@ -318,35 +346,68 @@ def driver_vagrant(commandline):
     if commandline.command == "createproject":
         header(commandline)
         name = None
+        alreadyconfigured = False
 
-        for tname in commandline.args:
-            answer = query_yes_no("projectname ok?: " + tname, force=commandline.force)
+        if not alreadyconfigured:
+            tname = get_argument_project_name(commandline)
+            if tname is None:
+                tname = os.path.basename(os.getcwd())
+            if tname is not None:
+                vagrantfile = os.path.join(os.path.join(os.path.dirname(os.getcwd()), str(tname)), "Vagrantfile")
+                if os.path.exists(vagrantfile):
+                    commandline.workingdir = os.getcwd()
+                else:
+                    vagrantfile = os.path.join(os.path.join(os.getcwd(), str(tname)), "Vagrantfile")
+                    if os.path.exists(vagrantfile):
+                        commandline.workingdir = os.getcwd()
 
-            if answer is "yes":
-                name = tname
-                break
-            elif answer is "no":
-                break
+
+                if not os.path.exists(vagrantfile):
+                    while True:
+                        answer = query_yes_no("projectname ok?: " + tname, force=commandline.force)
+
+                        if answer is "yes":
+                            name = tname
+                            break
+                        elif answer is "no":
+                            tname = doinput("projectname?")
+                        else:
+                            raise SystemExit()
+                else:
+                    os.chdir(os.path.dirname(vagrantfile))
+                    alreadyconfigured = True
+                    name = tname
+
+            readytoboot = False
+
+            if name and alreadyconfigured is False:
+                create_project_folder(commandline, name)
+                set_working_dir(commandline)
+                download_and_unzip_k8svagrant_project(commandline, name)
+                configure_generic_cluster_files_for_this_machine(commandline)
+                readytoboot = True
+            elif alreadyconfigured is True:
+                if commandline.workingdir is None:
+                    commandline.workingdir = abspath(os.path.join(os.getcwd(), str(tname)))
+                readytoboot = True
             else:
-                raise SystemExit()
+                abort(commandline.command, "no name")
 
-        if name is None:
-            name = doinput("projectname? ")
-
-        if name:
-            create_project_folder(commandline, name)
-            set_working_dir(commandline)
-            download_and_unzip_k8svagrant_project(commandline, name)
-            provider, vmhost = preboot_config(commandline)
-            console("provider:", provider)
-        else:
-            abort(commandline.command, "no name")
+            if readytoboot:
+                provider = get_provider()
+                run_vagrant_starting_procedure(provider)
 
         return
     elif commandline.command == "up":
-        set_working_dir(commandline)
-        provider, vmhost = preboot_config(commandline)
-        bring_vms_up(commandline, provider, vmhost)
+        tname = get_argument_project_name(commandline)
+        vagrantfile = os.path.join(os.path.join(os.getcwd(), str(tname)), "Vagrantfile")
+
+        if os.path.exists(vagrantfile):
+            provider = get_provider()
+            bring_vms_up(provider)
+        else:
+            abort(commandline.command, "No Vagrantfile found")
+
     elif commandline.command == "coreostoken":
         print_coreos_token_stdout()
     else:
@@ -608,15 +669,36 @@ def echo(content, fpathout):
     to_file(fpathout, content)
 
 
-def prepare_config(func_extra_config=None):
+def host_osx():
     """
-    @type func_extra_config: str, unicode, None
-    @return: None
+    host_osx
     """
     vmhostosx = False
 
     if str(os.popen("uname -a").read()).startswith("Darwin"):
         vmhostosx = True
+
+    return vmhostosx
+
+
+def get_provider():
+    """
+    get_provider
+    """
+    if host_osx():
+        provider = "vmware_fusion"
+    else:
+        provider = "vmware_workstation"
+
+    return provider
+
+
+def prepare_config(func_extra_config=None):
+    """
+    @type func_extra_config: str, unicode, None
+    @return: None
+    """
+    vmhostosx = host_osx()
 
     if not os.path.exists("/config/tokenosx.txt") or not os.path.exists("/config/tokenlinux.txt"):
         write_new_tokens(vmhostosx)
@@ -624,7 +706,7 @@ def prepare_config(func_extra_config=None):
     cp("Vagrantfile.tpl.rb", "Vagrantfile")
 
     if vmhostosx is True:
-        provider = "vmware_fusion"
+        provider = get_provider()
         cp("./roles/coreos-bootstrap/files/bootstraposx.txt", "./roles/coreos-bootstrap/files/bootstrap.sh")
         echo("192.168.14.4", "./config/startip.txt")
         echo("core", "./config/basehostname.txt")
@@ -633,7 +715,7 @@ def prepare_config(func_extra_config=None):
         sed("node", "core", "Vagrantfile")
         sed("core.yaml", "node.yml", "Vagrantfile")
     else:
-        provider = "vmware_workstation"
+        provider = get_provider()
         cp("./roles/coreos-bootstrap/files/bootstraplinux.txt", "./roles/coreos-bootstrap/files/bootstrap.sh")
         echo("192.168.14.5", "./config/startip.txt")
         echo("node", "./config/basehostname.txt")
@@ -964,64 +1046,21 @@ def remote_command(options):
             print("\033[37m", "done", "\033[0m")
 
 
-def bring_vms_up(options, provider, vmhostosx):
+def bring_vms_up(provider):
     """
-    @type options: str, unicode
     @type provider: str, unicode
-    @type vmhostosx: str, unicode
     @return: None
     """
     if provider is None:
         raise AssertionError("provider is None")
 
-    run_cmd("ssh-add ~/.vagrant.d/insecure_private_key")
+    run_cmd("ssh-add keys/insecure/vagrant")
     run_cmd("ssh-add ./keys/secure/vagrantsecure;")
     p = subprocess.Popen(["python", "-m", "SimpleHTTPServer", "8000"], stdout=open("/dev/null", "w"), stderr=open("/dev/null", "w"))
     try:
-        numinstances = None
-        try:
-            numinstances = get_num_instances()
-        except Exception as e:
-            print("ignored")
-            print(e)
-
-        allnew = False
-
-        if options.up == 'allnew':
-            allnew = True
-            options.up = 'all'
-            numinstances = None
-
-        if options.up == 'all':
-            if numinstances is None:
-                cmd = "vagrant up"
-
-                if allnew is True:
-                    cmd += " --provision"
-
-                cmd += " --provider=" + provider
-                run_cmd(cmd)
-            else:
-                print("bringing up", numinstances, "instances")
-
-                for i in range(1, numinstances + 1):
-                    name = "node" + str(i)
-
-                    if vmhostosx is True:
-                        name = "core" + str(i)
-
-                    print(name)
-                    cmd = "vagrant up "
-                    cmd += name
-
-                    if allnew is True:
-                        cmd += " --provision"
-
-                    cmd += " --provider=" + provider
-                    run_cmd(cmd)
-        else:
-            cmd = "vagrant up " + options.up + " --provider=" + provider
-            run_cmd(cmd)
+        cmd = "vagrant up"
+        cmd += " --provider=" + provider
+        run_cmd(cmd)
     finally:
         p.kill()
 

@@ -41,8 +41,10 @@ def run_commandline(parent=None):
     @type parent: Arguments, None
     @return: None
     """
-    commandline = VagrantArguments(parent)
-    driver_vagrant(commandline)
+    print(doinput("type hello", default="foo", answers=["foo", 8, 3.14, "hello", "bar", "world"]))
+    print(doinput("type something"))
+    #commandline = VagrantArguments(parent)
+    #driver_vagrant(commandline)
 
 
 if __name__ == "__main__":
@@ -201,8 +203,19 @@ def preboot_config(commandline):
 
     if commandline.command in ["createproject", "localizemachine", "replacecloudconfig", "reload", "command"]:
         numcpus = 2
-
+        gui = True
+        instances = 2
         if commandline.force is False:
+            numcpus = doinput("number of cpus on server (default=2)? ")
+            try:
+                numcpus = int(numcpus)
+            except ValueError:
+                numcpus = 2
+            gui = doinput("show vm gui (default=True)? ")
+            try:
+                numcpus = int(numcpus)
+            except ValueError:
+                numcpus = 2
             numcpus = doinput("number of cpus on server (default=2)? ")
             try:
                 numcpus = int(numcpus)

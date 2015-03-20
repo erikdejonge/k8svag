@@ -30,6 +30,7 @@ import subprocess
 import socket
 import zipfile
 import shutil
+import netifaces
 from tempfile import NamedTemporaryFile
 from multiprocessing import Pool, cpu_count
 from os import path
@@ -93,14 +94,22 @@ class VagrantArguments(BaseArguments):
 
     @property
     def workingdir(self):
+        """
+        workingdir
+        """
         return self.__workingdir
 
     @workingdir.setter
     def workingdir(self, v):
+        """
+        @type v: str
+        @return: None
+        """
         if self.workingdir is not None:
             raise AssertionError("workingdir was already set", self.workingdir)
         else:
             self.__workingdir = v
+
 
 def run_commandline(parent=None):
     """
@@ -118,32 +127,26 @@ if __name__ == "__main__":
         print("bye")
 
 
-def set_working_dir(commandline):
+def set_working_dir(commandline, projectname):
     """
     @type commandline: VagrantArguments
+    @return: VagrantArgument
     """
-    projectname = None
-
-    if commandline.workingdir is None:
-        for tname in commandline.args:
-            projectname = tname
-            break
-
-        if projectname is not None:
-            answer = query_yes_no("workingdir ok?: " + abspath(os.path.join(os.getcwd(), projectname)), force=commandline.force)
-
-            if answer == "yes":
-                commandline.workingdir = abspath(os.path.join(os.getcwd(), projectname))
-
     if commandline.workingdir is None:
         vagrantfile = os.path.join(os.getcwd(), "Vagrantfile.tpl.rb")
 
         if os.path.exists(vagrantfile):
             commandline.workingdir = os.getcwd()
-        else:
-            commandline.workingdir = abspath(doinput("projectname? "))
+            if os.path.basename(os.path.dirname(commandline.workingdir)) != projectname:
+                console_warning(projectname, os.path.basename(os.path.dirname(commandline.workingdir)))
+                raise AssertionError("projectname and dirname are different")
 
-        commandline.workingdir = abspath(os.path.join(os.getcwd(), commandline.workingdir))
+    if commandline.workingdir is None:
+        if projectname is not None:
+            answer = query_yes_no("workingdir ok?: " + abspath(os.path.join(os.getcwd(), projectname)), force=commandline.force)
+
+            if answer == True:
+                commandline.workingdir = abspath(os.path.join(os.getcwd(), projectname))
 
     if commandline.workingdir is not None and os.path.exists(commandline.workingdir):
         desc = "workingdir: " + str(commandline.workingdir)
@@ -207,19 +210,19 @@ def configure_generic_cluster_files_for_this_machine(commandline):
             pass
 
     vmhost, provider = prepare_config(func_extra_config)
-    info(commandline.command, vmhost)
     info(commandline.command, provider)
     if commandline.command in ["createproject", "localizemachine", "replacecloudconfig", "reload", "command"]:
         numcpus = 2
         gui = True
         instances = 2
+        memory = 1024
 
         if commandline.force is False:
             numcpus = doinput("number of cpus on server (default=2)?", default=2, force=commandline.force)
             try:
                 numcpus = int(numcpus)
             except ValueError:
-                warning(commandline.command, "invalid input, resetting to t2")
+                warning(commandline.command, "invalid input, resetting to 2")
                 numcpus = 2
 
             gui = query_yes_no("show vm gui?", default=True, force=commandline.force)
@@ -227,8 +230,15 @@ def configure_generic_cluster_files_for_this_machine(commandline):
             try:
                 instances = int(instances)
             except ValueError:
-                warning(commandline.command, "numcpusinvalid input, resetting to t2")
+                warning(commandline.command, "instances input invalid, resetting to 2")
                 instances = 2
+
+            memory = doinput("server memory in mb?", default=1024, force=commandline.force)
+            try:
+                memory = int(memory)
+            except ValueError:
+                warning(commandline.command, "memory input invalid, resetting to 1024")
+                instances = 1024
 
         vfp = open(vagrantfile)
         vf = vfp.read()
@@ -238,7 +248,7 @@ def configure_generic_cluster_files_for_this_machine(commandline):
         vf = vf.replace("$num_instances = x", "$num_instances = " + str(instances))
         vf = vf.replace("$update_channel = 'beta'", "$update_channel = 'beta'")
         vf = vf.replace("$vm_gui = x", "$vm_gui = " + str(gui).lower())
-        vf = vf.replace("$vm_memory = x", "$vm_memory = 1024")
+        vf = vf.replace("$vm_memory = x", "$vm_memory = " + str(memory))
         vf = vf.replace("$vm_cpus = x", "$vm_cpus = " + str(numcpus))
         open(vagrantfile, "w").write(vf)
         ntl = "configscripts/node.tmpl.yml"
@@ -271,12 +281,12 @@ def create_project_folder(commandline, name):
 
         if answerdel is False:
             raise SystemExit()
-        elif answerdel == "yes":
+        elif answerdel == True:
             delete_directory(name, ["master.zip"])
         else:
             ans = query_yes_no(question="reuse previous downloaded file?: " + name, force=commandline.force)
 
-            if ans == "no":
+            if ans == False:
                 abort(commandline.command, "path not empty")
                 raise SystemExit()
             else:
@@ -324,13 +334,73 @@ def get_argument_project_name(commandline):
     return tname
 
 
-def run_vagrant_starting_procedure(provider):
+def bring_vms_up(provider):
+    """
+    @type provider: str, unicode
+    @return: None
+    """
+    if provider is None:
+        raise AssertionError("provider is None")
+
+    p = subprocess.Popen(["python", "-m", "SimpleHTTPServer", "8000"], stdout=open("/dev/null", "w"), stderr=open("/dev/null", "w"))
+    try:
+        cmd = "vagrant up --provider=" + provider
+        run_cmd(cmd)
+    finally:
+        p.kill()
+
+
+def is_osx():
+    osx = False
+    if str(os.popen("uname -a").read()).startswith("Darwin"):
+        osx = True
+    return osx
+
+def info_run_cmd(cmd):
+    try:
+        console(run_cmd(cmd), prefix=cmd, color="blue")
+    except ChildProcessError as ce:
+        exit(1)
+
+def run_vagrant_starting_procedure(commandline, provider):
     """
     @type provider: str
     @return: None
     """
-    run_cmd("vagrant box update")
+    default_gateway = None
+    gateways = netifaces.gateways()
+    for gws in gateways:
+        if gws == "default":
+            for gw in gateways[gws]:
+                for gw2 in gateways[gws][gw]:
+                    if "." in gw2:
+                        default_gateway = gw2
+    if default_gateway is None:
+        abort(commandline.command, "default gateway could not be found")
+    else:
+        info(commandline.command, "default gateway: "+default_gateway)
+        to_file("config/gateway.txt", default_gateway)
 
+    osx = is_osx()
+    info_run_cmd("ssh-add keys/insecure/vagrant")
+    bring_vms_up(provider)
+    newtoken = get_token()
+    if osx:
+        to_file("config/tokenosx.txt", newtoken)
+    else:
+        to_file("config/tokenlinux.txt", newtoken)
+    if osx:
+        info_run_cmd("sudo vmnet-cli --stop")
+        time.sleep(1)
+        info_run_cmd("sudo vmnet-cli --start")
+        time.sleep(2)
+    else:
+        info_run_cmd("sudo /usr/bin/vmware-networks --stop")
+        time.sleep(1)
+        info_run_cmd("sudo /usr/bin/vmware-networks --start")
+        time.sleep(2)
+    info_run_cmd("rm -f ~/.ssh/known_hosts")
+    info_run_cmd("vagrant up")
 
 def driver_vagrant(commandline):
     """
@@ -350,26 +420,29 @@ def driver_vagrant(commandline):
 
         if not alreadyconfigured:
             tname = get_argument_project_name(commandline)
+
             if tname is None:
                 tname = os.path.basename(os.getcwd())
+
             if tname is not None:
                 vagrantfile = os.path.join(os.path.join(os.path.dirname(os.getcwd()), str(tname)), "Vagrantfile")
+
                 if os.path.exists(vagrantfile):
                     commandline.workingdir = os.getcwd()
                 else:
                     vagrantfile = os.path.join(os.path.join(os.getcwd(), str(tname)), "Vagrantfile")
+
                     if os.path.exists(vagrantfile):
                         commandline.workingdir = os.getcwd()
-
 
                 if not os.path.exists(vagrantfile):
                     while True:
                         answer = query_yes_no("projectname ok?: " + tname, force=commandline.force)
 
-                        if answer is "yes":
+                        if answer is True:
                             name = tname
                             break
-                        elif answer is "no":
+                        elif answer is False:
                             tname = doinput("projectname?")
                         else:
                             raise SystemExit()
@@ -382,20 +455,27 @@ def driver_vagrant(commandline):
 
             if name and alreadyconfigured is False:
                 create_project_folder(commandline, name)
-                set_working_dir(commandline)
+                commandline = set_working_dir(commandline, name)
                 download_and_unzip_k8svagrant_project(commandline, name)
-                configure_generic_cluster_files_for_this_machine(commandline)
+                try:
+                    configure_generic_cluster_files_for_this_machine(commandline)
+                except BaseException as be:
+                    console_exception(be)
+                    delete_directory(commandline.workdir)
+
+                run_cmd("vagrant box update")
                 readytoboot = True
             elif alreadyconfigured is True:
                 if commandline.workingdir is None:
                     commandline.workingdir = abspath(os.path.join(os.getcwd(), str(tname)))
+
                 readytoboot = True
             else:
                 abort(commandline.command, "no name")
 
             if readytoboot:
                 provider = get_provider()
-                run_vagrant_starting_procedure(provider)
+                run_vagrant_starting_procedure(commandline, provider)
 
         return
     elif commandline.command == "up":
@@ -486,6 +566,7 @@ def get_num_instances():
     return numinstances
 
 
+
 def get_vm_names(retry=False):
     """
     @type retry: str, unicode
@@ -508,10 +589,7 @@ def get_vm_names(retry=False):
         # noinspection PyBroadException
         try:
             numinstances = get_num_instances()
-            osx = False
-
-            if str(os.popen("uname -a").read()).startswith("Darwin"):
-                osx = True
+            osx = is_osx()
 
             for i in range(1, numinstances + 1):
                 if osx is True:
@@ -1044,25 +1122,6 @@ def remote_command(options):
             print_remote_command_result(result)
         else:
             print("\033[37m", "done", "\033[0m")
-
-
-def bring_vms_up(provider):
-    """
-    @type provider: str, unicode
-    @return: None
-    """
-    if provider is None:
-        raise AssertionError("provider is None")
-
-    run_cmd("ssh-add keys/insecure/vagrant")
-    run_cmd("ssh-add ./keys/secure/vagrantsecure;")
-    p = subprocess.Popen(["python", "-m", "SimpleHTTPServer", "8000"], stdout=open("/dev/null", "w"), stderr=open("/dev/null", "w"))
-    try:
-        cmd = "vagrant up"
-        cmd += " --provider=" + provider
-        run_cmd(cmd)
-    finally:
-        p.kill()
 
 
 def destroy_vagrant_cluster():

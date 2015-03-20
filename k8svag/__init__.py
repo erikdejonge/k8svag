@@ -41,7 +41,7 @@ def run_commandline(parent=None):
     @type parent: Arguments, None
     @return: None
     """
-    print(doinput("type hello", default="foo", answers=["foo", 8, 3.14, "hello", "bar", "world"]))
+    print(doinput("type hello", answers=["foo", 8, 3.14, "hello", "bar", "world"]))
     print(doinput("type something"))
     #commandline = VagrantArguments(parent)
     #driver_vagrant(commandline)

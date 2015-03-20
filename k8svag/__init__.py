@@ -23,36 +23,19 @@ DEBUGMODE = False
 
 import vagrant
 import os
+import re
 import time
 import pickle
 import subprocess
 import socket
 import zipfile
+import shutil
 from tempfile import NamedTemporaryFile
 from multiprocessing import Pool, cpu_count
 from os import path
 from cmdssh import run_cmd, remote_cmd, remote_cmd_map, run_scp
 from consoleprinter import console, query_yes_no, console_warning, console_exception, console_error_exit
 from arguments import Schema, Use, BaseArguments, abspath, abort, warning, unzip, download, delete_directory, info, doinput
-
-
-def run_commandline(parent=None):
-    """
-    @type parent: Arguments, None
-    @return: None
-    """
-    print(doinput("type hello", answers=["foo", 8, 3.14, "hello", "bar", "world"]))
-    print(doinput("type something"))
-    #commandline = VagrantArguments(parent)
-    #driver_vagrant(commandline)
-
-
-if __name__ == "__main__":
-    try:
-        run_commandline()
-    except KeyboardInterrupt:
-        print("bye")
-
 
 class VagrantArguments(BaseArguments):
     """
@@ -88,6 +71,7 @@ class VagrantArguments(BaseArguments):
 
             Commands:
                 check                   Ansible-playbook dry-run
+                coreostoken             Print coreos token to stdout
                 clustercommand          Execute command on cluster
                 createproject <name>    Create a Coreos Kubernetes cluster in local directory
                 destroy                 Destroy vagrant cluster (vagrant destroy -f)
@@ -98,7 +82,6 @@ class VagrantArguments(BaseArguments):
                 replacecloudconfig      Replace all coreos-cloudconfigs and reboot
                 ssh                     Make ssh connection into specific machine
                 status                  Status of cluster or machine
-                coreostoken             Print coreos token to stdout
                 up <name>               Bring cluster up
                 kubernetes              Kubernetes commands
         """
@@ -106,6 +89,23 @@ class VagrantArguments(BaseArguments):
         validateschema = Schema({'command': Use(self.validcommand)})
         self.set_command_help("up", "Start all vm's in the cluster")
         super(VagrantArguments, self).__init__(doc, validateschema, parent=parent)
+
+
+def run_commandline(parent=None):
+    """
+    @type parent: Arguments, None
+    @return: None
+    """
+    commandline = VagrantArguments(parent)
+    driver_vagrant(commandline)
+
+
+if __name__ == "__main__":
+    try:
+        run_commandline()
+    except KeyboardInterrupt:
+        print("bye")
+
 
 
 def set_working_dir(commandline):
@@ -126,9 +126,9 @@ def set_working_dir(commandline):
                 commandline.workingdir = abspath(os.path.join(os.getcwd(), projectname))
 
     if commandline.workingdir is None:
-        vagrantfiletemplate = os.path.join(os.getcwd(), "Vagrantfile.tpl.rb")
+        vagrantfile = os.path.join(os.getcwd(), "Vagrantfile.tpl.rb")
 
-        if os.path.exists(vagrantfiletemplate):
+        if os.path.exists(vagrantfile):
             commandline.workingdir = os.getcwd()
         else:
             commandline.workingdir = abspath(doinput("projectname? "))
@@ -175,68 +175,71 @@ def preboot_config(commandline):
     if not os.path.exists(picklepath):
         os.mkdir(picklepath)
 
-    vagrantfiletemplate = os.path.join(str(commandline.workingdir), "Vagrantfile.tpl.rb")
+    vagrantfile = os.path.join(str(commandline.workingdir), "Vagrantfile")
+    if not os.path.exists(vagrantfile):
+        if not path.exists(vagrantfile + ".tpl.rb"):
+            console_warning("no Vagrantfile in directory")
+            raise SystemExit()
 
-    if not path.exists(vagrantfiletemplate):
-        console_warning("no Vagrantfile in directory")
-        raise SystemExit()
+        if not path.exists(picklepath):
+            os.mkdir(picklepath)
 
-    if not path.exists(picklepath):
-        os.mkdir(picklepath)
+        func_extra_config = None
+        vagranthome = commandline.workingdir
+        mod_extra_config_path = path.join(vagranthome, "extra_config_vagrant.py")
 
-    func_extra_config = None
-    vagranthome = commandline.workingdir
-    mod_extra_config_path = path.join(vagranthome, "extra_config_vagrant.py")
-
-    if os.path.exists(mod_extra_config_path):
-        try:
-            mod_extra_config = __import__(mod_extra_config_path)
-            if mod_extra_config is not None:
-                func_extra_config = mod_extra_config.__main__
-        except ImportError:
-            pass
-
-    vmhost, provider = prepare_config(func_extra_config)
-
-    if False is localize_config(commandline, vmhost):
-        raise AssertionError("localize_config was False")
-
-    if commandline.command in ["createproject", "localizemachine", "replacecloudconfig", "reload", "command"]:
-        numcpus = 2
-        gui = True
-        instances = 2
-        if commandline.force is False:
-            numcpus = doinput("number of cpus on server (default=2)? ")
+        if os.path.exists(mod_extra_config_path):
             try:
-                numcpus = int(numcpus)
-            except ValueError:
-                numcpus = 2
-            gui = doinput("show vm gui (default=True)? ")
-            try:
-                numcpus = int(numcpus)
-            except ValueError:
-                numcpus = 2
-            numcpus = doinput("number of cpus on server (default=2)? ")
-            try:
-                numcpus = int(numcpus)
-            except ValueError:
-                numcpus = 2
+                mod_extra_config = __import__(mod_extra_config_path)
+                if mod_extra_config is not None:
+                    func_extra_config = mod_extra_config.__main__
+            except ImportError:
+                pass
 
-        vfp = open(vagrantfiletemplate, "r")
-        vf = vfp.read()
-        vfp.close()
-        vf = vf.replace("cpus = x", "cpus = " + str(numcpus))
-        open(vagrantfiletemplate, "w").write(vf)
-        ntl = "configscripts/node.tmpl.yml"
-        write_config_from_template(commandline, ntl, vmhost)
-        ntl = "configscripts/master.tmpl.yml"
-        write_config_from_template(commandline, ntl, vmhost)
+        vmhost, provider = prepare_config(func_extra_config)
+        info(commandline.command, vmhost)
+        info(commandline.command, provider)
+        if commandline.command in ["createproject", "localizemachine", "replacecloudconfig", "reload", "command"]:
+            numcpus = 2
+            gui = True
+            instances = 2
 
-        if commandline.localizemachine == 1:
-            p = subprocess.Popen(["/usr/bin/vagrant", "up"], cwd=commandline.workingdir)
-            p.wait()
+            if commandline.force is False:
+                numcpus = doinput("number of cpus on server (default=2)?", default=2, force=commandline.force)
+                try:
+                    numcpus = int(numcpus)
+                except ValueError:
+                    warning(commandline.command, "invalid input, resetting to t2")
+                    numcpus = 2
 
-    return provider, vmhost
+                gui = query_yes_no("show vm gui?", default=True, force=commandline.force)
+                instances = doinput("number of server instances?", default=4, force=commandline.force)
+                try:
+                    instances = int(instances)
+                except ValueError:
+                    warning(commandline.command, "numcpusinvalid input, resetting to t2")
+                    instances = 2
+
+            vfp = open(vagrantfile)
+            vf = vfp.read()
+            vfp.close()
+            vf = vf.replace("cpus = x", "cpus = " + str(numcpus))
+            vf = vf.replace("cpus = x", "cpus = " + str(numcpus))
+            vf = vf.replace("$num_instances = x", "$num_instances = " + str(instances))
+            vf = vf.replace("$update_channel = 'beta'", "$update_channel = 'beta'")
+            vf = vf.replace("$vm_gui = x", "$vm_gui = " + str(gui).lower())
+            vf = vf.replace("$vm_memory = x", "$vm_memory = 1024")
+            vf = vf.replace("$vm_cpus = x", "$vm_cpus = " + str(numcpus))
+            open(vagrantfile, "w").write(vf)
+            ntl = "configscripts/node.tmpl.yml"
+            write_config_from_template(commandline, ntl, vmhost)
+            ntl = "configscripts/master.tmpl.yml"
+            write_config_from_template(commandline, ntl, vmhost)
+
+        if False is localize_config(commandline, vmhost):
+            raise AssertionError("localize_config was False")
+
+
 
 
 def create_project_folder(commandline, name):
@@ -254,15 +257,9 @@ def create_project_folder(commandline, name):
         raise SystemExit()
     elif not len(os.listdir(name)) == 0:
         warning(commandline.command, "path not empty: " + name)
+        answerdel = query_yes_no(question="delete all files in directory?: " + name, default=True, force=commandline.force)
 
-        if commandline.force is True:
-            default = "yes"
-        else:
-            default = "yes"
-
-        answerdel = query_yes_no(question="delete all files in directory?: " + name, default=default, force=commandline.force)
-
-        if answerdel == "no":
+        if answerdel is False:
             raise SystemExit()
         elif answerdel == "yes":
             delete_directory(name, ["master.zip"])
@@ -553,13 +550,70 @@ def write_config_from_template(commandline, ntl, vmhostosx):
     open(config, "w").write(node)
 
 
+def sed(oldstr, newstr, infile):
+    """
+    @type oldstr: str
+    @type newstr: str
+    @type infile: str
+    @return: None
+    """
+    linelist = []
+    with open(infile) as f:
+        for item in f:
+            newitem = re.sub(oldstr, newstr, item)
+            linelist.append(newitem)
+    with open(infile, "w") as f:
+        f.truncate()
+
+        for line in linelist:
+            f.writelines(line)
+
+
+def to_file(fpath, txt, mode="wt"):
+    """
+    @type fpath: str
+    @type txt: str
+    @type mode: str
+    @return: None
+    """
+    with open(fpath, mode) as f:
+        f.write(txt)
+
+
+def cat(fpath, mode="rt"):
+    """
+    @type fpath: str
+    @type mode: str
+    @return: None
+    """
+    with open(fpath, mode) as f:
+        return f.read()
+
+
+def cp(fpathin, fpathout):
+    """
+    @type fpathin: str
+    @type fpathout: str
+    @return: None
+    """
+    shutil.copyfile(fpathin, fpathout)
+
+
+def echo(content, fpathout):
+    """
+    @type content: str
+    @type fpathout: str
+    @return: None
+    """
+    to_file(fpathout, content)
+
+
 def prepare_config(func_extra_config=None):
     """
     @type func_extra_config: str, unicode, None
     @return: None
     """
     vmhostosx = False
-    provider = ""
 
     if str(os.popen("uname -a").read()).startswith("Darwin"):
         vmhostosx = True
@@ -567,16 +621,24 @@ def prepare_config(func_extra_config=None):
     if not os.path.exists("/config/tokenosx.txt") or not os.path.exists("/config/tokenlinux.txt"):
         write_new_tokens(vmhostosx)
 
+    cp("Vagrantfile.tpl.rb", "Vagrantfile")
+
     if vmhostosx is True:
         provider = "vmware_fusion"
-
-        if path.exists("./configscripts/setconfigosx.sh") is True:
-            os.system("source ./configscripts/setconfigosx.sh")
+        cp("./roles/coreos-bootstrap/files/bootstraposx.txt", "./roles/coreos-bootstrap/files/bootstrap.sh")
+        echo("192.168.14.4", "./config/startip.txt")
+        echo("core", "./config/basehostname.txt")
+        echo("f294d901-f14b-4370-9a43-ddb2cdb1ad02", "./config/updatetoken.txt")
+        cp("./config/tokenosx.txt", "./config/token.txt")
+        sed("node", "core", "Vagrantfile")
+        sed("core.yaml", "node.yml", "Vagrantfile")
     else:
         provider = "vmware_workstation"
-
-        if path.exists("./configscripts/setconfiglinux.sh"):
-            os.system("souce ./configscripts/setconfiglinux.sh")
+        cp("./roles/coreos-bootstrap/files/bootstraplinux.txt", "./roles/coreos-bootstrap/files/bootstrap.sh")
+        echo("192.168.14.5", "./config/startip.txt")
+        echo("node", "./config/basehostname.txt")
+        echo("3a1f12c5-de6a-4ca9-9357-579598038cd8", "./config/updatetoken.txt")
+        cp("./config/tokenlinux.txt", "./config/token.txt")
 
     if func_extra_config:
         func_extra_config()
@@ -665,7 +727,11 @@ def localize_config(commandline, vmhostosx):
         console_error_exit("configscripts/node.tmpl.yml not found", print_stack=True)
 
     write_config_from_template(commandline, ntl, vmhostosx)
-    ntl = "configscripts/master.tmpl.yml"
+    ntl = os.path.join(cwd, "configscripts/master.tmpl.yml")
+
+    if not os.path.exists(ntl):
+        console_error_exit("configscripts/master.tmpl.yml not found", print_stack=True)
+
     write_config_from_template(commandline, ntl, vmhostosx)
     return True
 

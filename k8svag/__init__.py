@@ -117,6 +117,7 @@ def run_commandline(parent=None):
     @return: None
     """
     commandline = VagrantArguments(parent)
+
     driver_vagrant(commandline)
 
 
@@ -165,7 +166,7 @@ def header(commandline):
     @type commandline: VagrantArguments
     @return: None
     """
-    console(b'\xe2\x9a\xaa\xef\xb8\x8f'.decode() + "  CoreOs Vagrant Kubernetes Cluster", plaintext=True, color="blue")
+    console("CoreOs Vagrant Kubernetes Cluster", plaintext=True, color="blue")
     console("command:", commandline.command, plaintext=True, color="grey")
 
 
@@ -382,7 +383,7 @@ def run_vagrant_starting_procedure(commandline, provider):
         to_file("config/gateway.txt", default_gateway)
 
     osx = is_osx()
-    info_run_cmd("ssh-add keys/insecure/vagrant")
+    #info_run_cmd("ssh-add keys/insecure/vagrant")
     bring_vms_up(provider)
     newtoken = get_token()
     if osx:
@@ -791,7 +792,7 @@ def prepare_config(func_extra_config=None):
         echo("f294d901-f14b-4370-9a43-ddb2cdb1ad02", "./config/updatetoken.txt")
         cp("./config/tokenosx.txt", "./config/token.txt")
         sed("node", "core", "Vagrantfile")
-        sed("core.yaml", "node.yml", "Vagrantfile")
+        sed("core.yml", "node.yml", "Vagrantfile")
     else:
         provider = get_provider()
         cp("./roles/coreos-bootstrap/files/bootstraplinux.txt", "./roles/coreos-bootstrap/files/bootstrap.sh")

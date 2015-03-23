@@ -22,6 +22,11 @@ setup(name='k8svag',
       packages=['k8svag'],
       zip_safe=True,
       #install_requires=['paramiko', 'python-vagrant', 'consoleprinter', 'cmdssh'],
+      entry_points={
+          'console_scripts': [
+              'cbx=k8svag:main',
+          ],
+      },
       classifiers=[
           "Programming Language :: Python",
           "Programming Language :: Python :: 3",

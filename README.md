@@ -1,47 +1,41 @@
 # k8svag
 Kubernetes Vagrant Provisioning and management script
 
-###extraconfig
-The vagrant commands
 ```
+pip install k8svag
 cbx vagrant [command]
-```
-will look for a file name "extra_config_vagrant.py" and will execute the main function in order to configure.
-
+``
 
 ###usage
 ```bash
-Usage: main.py [-h] [-s [SSH [SSH ...]]] [-c [COMMAND [COMMAND ...]]]
-               [-f [SSHCONFIG [SSHCONFIG ...]]] [-u UP] [-d] [-k HALT]
-               [-q PROVISION] [-r [RELOAD [RELOAD ...]]] [-a] [-t] [-w WAIT]
-               [-l [LOCALIZEMACHINE [LOCALIZEMACHINE ...]]] [-p] [-x]
+Vagrant cluster management
 
-Vagrant controller, argument 'all' is whole cluster
+Usage:
+    cryptobox vagrant [options] [--] <command> [<args>...]
 
-optional arguments:
-  -h, --help            show this help message and exit
-  -s [SSH [SSH ...]], --ssh [SSH [SSH ...]]
-                        vagrant ssh
-  -c [COMMAND [COMMAND ...]], --command [COMMAND [COMMAND ...]]
-                        execute command on cluster
-  -f [SSHCONFIG [SSHCONFIG ...]], --status [SSHCONFIG [SSHCONFIG ...]]
-                        status of cluster or when name is given print config
-                        of ssh connections
-  -u UP, --up UP        vagrant up
-  -d, --destroy         vagrant destroy -f
-  -k HALT, --halt HALT  vagrant halt
-  -q PROVISION, --provision PROVISION
-                        provision server with playbook (server:playbook)
-  -r [RELOAD [RELOAD ...]], --reload [RELOAD [RELOAD ...]]
-                        vagrant reload
-  -a, --replacecloudconfig
-                        replacecloudconfigs and reboot
-  -t, --token           print a new token
-  -w WAIT, --wait WAIT  wait between server (-1 == enter)
-  -l [LOCALIZEMACHINE [LOCALIZEMACHINE ...]], --localizemachine [LOCALIZEMACHINE [LOCALIZEMACHINE ...]]
-                        apply specific configuration for a machine
-  -p, --parallel        parallel execution
-  -x, --check           ansible-playbook dry-run
+Options:
+    -h --help           Show this screen.
+    -p --parallel           Execute commands in parallel (ansible style).
+    -v --verbose            Verbose mode.
+    -f --force              Do not ask for confirmation
+    -w --wait=<ws>          Wait <ws> seconds between commands.
+    -d --workingdir=<wrkd>  Directory to execute commands in, default is current working dir.
+
+Commands:
+    check                   Ansible-playbook dry-run
+    coreostoken             Print coreos token to stdout
+    clustercommand          Execute command on cluster
+    createproject [<name>]  Create a Coreos Kubernetes cluster in local directory
+    destroy                 Destroy vagrant cluster (vagrant destroy -f)
+    halt [<name>]           Halt vagrant cluster (vagrant halt)
+    localizemachine         Apply specific configuration for the host-machine
+    ansibleplaybook         Provision server with ansible-playbook (server:playbook)
+    reload                  Reload cluster (vagrant reload)
+    replacecloudconfig      Replace all coreos-cloudconfigs and reboot
+    ssh                     Make ssh connection into specific machine
+    status                  Status of cluster or machine
+    up [<name>]             Bring cluster up
+    kubernetes              Kubernetes commands
 ```
 
 ###pip

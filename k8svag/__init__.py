@@ -21,6 +21,68 @@ standard_library.install_aliases()
 
 DEBUGMODE = False
 
+# def main():
+# """
+#     main
+#     """
+#     parser = ArgumentParser(description="Vagrant controller, argument 'all' is whole cluster")
+#     parser.add_argument("-s", "--ssh", dest="ssh", help="vagrant ssh", nargs='*')
+#     parser.add_argument("-c", "--command", dest="command", help="execute command on cluster", nargs="*")
+#     parser.add_argument("-f", "--status", dest="sshconfig", help="status of cluster or when name is given print config of ssh connections", nargs='*')
+#     parser.add_argument("-u", "--up", dest="up", help="vagrant up")
+#     parser.add_argument("-d", "--destroy", dest="destroy", help="vagrant destroy -f", action="store_true")
+#     parser.add_argument("-k", "--halt", dest="halt", help="vagrant halt")
+#     parser.add_argument("-q", "--provision", dest="provision", help="provision server with playbook (server:playybook)")
+#     parser.add_argument("-r", "--reload", dest="reload", help="vagrant reload", nargs='*')
+#     parser.add_argument("-a", "--replacecloudconfig", dest="replacecloudconfig", help="replacecloudconfigs and reboot", action="store_true")
+#     parser.add_argument("-t", "--token", dest="token", help="print a new token", action="store_true")
+#     parser.add_argument("-w", "--wait", dest="wait", help="wait between server (-1 == enter)")
+#     parser.add_argument("-l", "--localizemachine", dest="localizemachine", help="apply specific configuration for a machine", nargs='*')
+#     parser.add_argument("-p", "--parallel", dest="parallel", help="parallel execution", action="store_true")
+#     parser.add_argument("-x", "--check", dest="check", help="ansible-playbook dry-run", action="store_true")
+#     # echo "generate new token"
+#     options, unknown = parser.parse_known_args()
+#     if not path.exists("Vagrantfile"):
+#         print("== Error: no Vagrantfile in directory ==")
+#         return
+#     if not path.exists(".cl"):
+#         os.mkdir(".cl")
+#     provider = None
+#     vmhostosx = False
+#     if options.localizemachine is not None:
+#         options.localizemachine = list(options.localizemachine)
+#         # noinspection PyTypeChecker
+
+#         if len(options.localizemachine) == 0:
+#             options.localizemachine = 1
+#         else:
+#             options.localizemachine = 2
+#     provider, vmhostosx = localize(options, provider, vmhostosx)
+#     if options.localizemachine:
+#         return
+#     if options.token:
+#         print_coreos_token_stdout()
+#     elif options.ssh is not None:
+#         connect_ssh(options)
+#     elif options.sshconfig is not None:
+#         sshconfig(options)
+#     elif options.command:
+#         remote_command(options)
+#     elif options.up:
+#         bring_vms_up(options, provider, vmhostosx)
+#     elif options.destroy:
+#         destroy_vagrant_cluster()
+#     elif options.halt:
+#         haltvagrantcluster(options)
+#     elif options.provision:
+#         provision_ansible(options)
+#     elif options.reload:
+#         reload_vagrant_cluster(options)
+#     elif options.replacecloudconfig:
+#         replacecloudconfig(options, vmhostosx)
+#     else:
+#         parser.print_help()
+
 import vagrant
 import os
 import re
@@ -31,12 +93,14 @@ import socket
 import zipfile
 import shutil
 import netifaces
+import readline
 from tempfile import NamedTemporaryFile
 from multiprocessing import Pool, cpu_count
 from os import path
 from cmdssh import run_cmd, remote_cmd, remote_cmd_map, run_scp
 from consoleprinter import console, query_yes_no, console_warning, console_exception, console_error_exit
 from arguments import Schema, Use, BaseArguments, abspath, abort, warning, unzip, download, delete_directory, info, doinput
+readline.parse_and_bind('tab: complete')
 
 
 class VagrantArguments(BaseArguments):
@@ -57,11 +121,13 @@ class VagrantArguments(BaseArguments):
         self.commandline = None
         self.command = None
         self.createproject = None
+        self.parallel = False
+        self.projectname = ""
         doc = """
             Vagrant cluster management
 
             Usage:
-                cryptobox vagrant [options] [--] <command> [<args>...]
+                cryptobox vagrant [options] [--] <command> [<projectname>] [<args>...]
 
             Options:
                 -h --help           Show this screen.
@@ -72,22 +138,20 @@ class VagrantArguments(BaseArguments):
                 -d --workingdir=<wrkd>  Directory to execute commands in, default is current working dir.
 
             Commands:
-                check                   Ansible-playbook dry-run
+                baseprovision           Apply configuration, createproject calls this.
                 coreostoken             Print coreos token to stdout
-                clustercommand          Execute command on cluster
-                createproject <name>    Create a Coreos Kubernetes cluster in local directory
+                remotecommand           Execute command on cluster (remote command)
+                createproject           Create a Coreos Kubernetes cluster in local directory
                 destroy                 Destroy vagrant cluster (vagrant destroy -f)
                 halt                    Halt vagrant cluster (vagrant halt)
-                localizemachine         Apply specific configuration for the host-machine
                 ansibleplaybook         Provision server with ansible-playbook (server:playbook)
                 reload                  Reload cluster (vagrant reload)
                 replacecloudconfig      Replace all coreos-cloudconfigs and reboot
                 ssh                     Make ssh connection into specific machine
                 status                  Status of cluster or machine
-                up <name>               Bring cluster up
-                kubernetes              Kubernetes commands
+                up                      Bring cluster up
         """
-        self.validcommands = ["createproject", "up", "coreostoken", "halt"]
+        self.validcommands = ["createproject", "up", "coreostoken", "halt", "destroy", "remotecommand", "ssh"]
         validateschema = Schema({'command': Use(self.validcommand)})
         self.set_command_help("up", "Start all vm's in the cluster")
         super(VagrantArguments, self).__init__(doc, validateschema, parent=parent)
@@ -109,6 +173,89 @@ class VagrantArguments(BaseArguments):
             raise AssertionError("workingdir was already set", self.workingdir)
         else:
             self.__workingdir = v
+
+
+def driver_vagrant(commandline):
+    """
+    @type commandline: VagrantArguments
+    @return: None
+    """
+    if hasattr(commandline, "help") and commandline.help is True:
+        print()
+        print(commandline.m_doc)
+        return
+
+    console("CoreOs Vagrant Kubernetes Cluster", plaintext=True, color="green")
+
+    if commandline.command is None:
+        raise AssertionError("no command set")
+
+    project_found, name = get_working_directory(commandline)
+    if not project_found and commandline.command != "createproject":
+        abort(commandline.command, "project [" + name + "] not found")
+    else:
+        info(commandline.command, "project [" + name + "] found in [" + os.getcwd() + "]")
+
+    if commandline.command == "createproject":
+        if project_found:
+            abort(commandline.command, "project file exist, refusing overwrite")
+
+        while True:
+            answer = query_yes_no("projectname ok?: " + name, force=commandline.force)
+
+            if answer is True:
+                break
+            elif answer is False:
+                name = doinput("projectname?")
+            else:
+                raise SystemExit()
+
+        create_project_folder(commandline, name)
+        commandline = set_working_dir(commandline, name)
+        gui, numinstance, memory, numcpu = input_vagrant_parameters(commandline)
+        download_and_unzip_k8svagrant_project(commandline)
+        try:
+            configure_generic_cluster_files_for_this_machine(commandline, gui, numinstance, memory, numcpu)
+        except BaseException:
+            delete_directory(str(commandline.workingdir), ['master.zip'])
+            raise
+
+        run_cmd("vagrant box update")
+        readytoboot = True
+
+        if readytoboot:
+            provider = get_provider()
+            run_vagrant_starting_procedure(commandline, provider)
+
+        return
+    elif commandline.command == "up":
+        provider = get_provider()
+        bring_vms_up(provider)
+    elif commandline.command == "halt":
+        run_cmd("vagrant halt")
+    elif commandline.command == "coreostoken":
+        print_coreos_token_stdout()
+    elif commandline.command == "destroy":
+        destroy_vagrant_cluster()
+    elif commandline.command == "baseprovision":
+        info(commandline.command, "make commands on server")
+        remote_command("date", False)
+    elif commandline.command == "ssh":
+        if len(commandline.args) == 1:
+            connect_ssh(commandline.args[0])
+        else:
+            abort(commandline.command, "No server given, [cbx vagrant ssh servername]")
+
+    elif commandline.command == "remotecommand":
+        if len(commandline.args) == 0:
+            abort(commandline.command, "no remote command entered [...vagrant <projectname> <remotecommand>]")
+        try:
+            remote_command(commandline.args[0], commandline.parallel, timeout=5)
+        except socket.timeout as ex:
+            abort("remotecommand: " + commandline.args[0], "exception -> " + str(ex))
+    else:
+        abort(commandline.command, "not implemented")
+        console(commandline)
 
 
 def run_commandline(parent=None):
@@ -162,9 +309,49 @@ def set_working_dir(commandline, projectname):
     return commandline
 
 
-def configure_generic_cluster_files_for_this_machine(commandline):
+def input_vagrant_parameters(commandline):
     """
     @type commandline: VagrantArguments
+    @return: None
+    """
+    numcpus = 2
+    gui = True
+    instances = 2
+    memory = 1024
+
+    if commandline.force is False:
+        numcpus = doinput("number of cpus on server (default=2)?", default=2, force=commandline.force)
+        try:
+            numcpus = int(numcpus)
+        except ValueError:
+            warning(commandline.command, "invalid input, resetting to 2")
+            numcpus = 2
+
+        gui = query_yes_no("show vm gui?", default=True, force=commandline.force)
+        instances = doinput("number of server instances?", default=4, force=commandline.force)
+        try:
+            instances = int(instances)
+        except ValueError:
+            warning(commandline.command, "instances input invalid, resetting to 2")
+            instances = 2
+
+        memory = doinput("server memory in mb?", default=1024, force=commandline.force)
+        try:
+            memory = int(memory)
+        except ValueError:
+            warning(commandline.command, "memory input invalid, resetting to 1024")
+            instances = 1024
+
+    return gui, instances, memory, numcpus
+
+
+def configure_generic_cluster_files_for_this_machine(commandline, gui, numinstance, memory, numcpu):
+    """
+    @type commandline: VagrantArguments
+    @type gui: str
+    @type numinstance: int
+    @type memory: str
+    @type numcpu: int
     @return: None
     """
     if not hasattr(commandline, "workingdir"):
@@ -204,45 +391,17 @@ def configure_generic_cluster_files_for_this_machine(commandline):
 
     vmhost, provider = prepare_config(func_extra_config)
     info(commandline.command, provider)
-    if commandline.command in ["createproject", "localizemachine", "replacecloudconfig", "reload", "command"]:
-        numcpus = 2
-        gui = True
-        instances = 2
-        memory = 1024
-
-        if commandline.force is False:
-            numcpus = doinput("number of cpus on server (default=2)?", default=2, force=commandline.force)
-            try:
-                numcpus = int(numcpus)
-            except ValueError:
-                warning(commandline.command, "invalid input, resetting to 2")
-                numcpus = 2
-
-            gui = query_yes_no("show vm gui?", default=True, force=commandline.force)
-            instances = doinput("number of server instances?", default=4, force=commandline.force)
-            try:
-                instances = int(instances)
-            except ValueError:
-                warning(commandline.command, "instances input invalid, resetting to 2")
-                instances = 2
-
-            memory = doinput("server memory in mb?", default=1024, force=commandline.force)
-            try:
-                memory = int(memory)
-            except ValueError:
-                warning(commandline.command, "memory input invalid, resetting to 1024")
-                instances = 1024
-
+    if commandline.command in ["createproject", "baseprovision", "replacecloudconfig", "reload", "command"]:
         vfp = open(vagrantfile)
         vf = vfp.read()
         vfp.close()
-        vf = vf.replace("cpus = x", "cpus = " + str(numcpus))
-        vf = vf.replace("cpus = x", "cpus = " + str(numcpus))
-        vf = vf.replace("$num_instances = x", "$num_instances = " + str(instances))
+        vf = vf.replace("cpus = x", "cpus = " + str(numcpu))
+        vf = vf.replace("cpus = x", "cpus = " + str(numcpu))
+        vf = vf.replace("$num_instances = x", "$num_instances = " + str(numinstance))
         vf = vf.replace("$update_channel = 'beta'", "$update_channel = 'beta'")
         vf = vf.replace("$vm_gui = x", "$vm_gui = " + str(gui).lower())
         vf = vf.replace("$vm_memory = x", "$vm_memory = " + str(memory))
-        vf = vf.replace("$vm_cpus = x", "$vm_cpus = " + str(numcpus))
+        vf = vf.replace("$vm_cpus = x", "$vm_cpus = " + str(numcpu))
         open(vagrantfile, "w").write(vf)
         ntl = "configscripts/node.tmpl.yml"
         write_config_from_template(commandline, ntl, vmhost)
@@ -286,49 +445,34 @@ def create_project_folder(commandline, name):
                 delete_directory(name, ["master.zip"])
 
 
-def download_and_unzip_k8svagrant_project(commandline, name):
+def download_and_unzip_k8svagrant_project(commandline):
     """
     @type commandline: VagrantArguments
-    @type name: str
     @return: None
     """
     info(commandline.command, "downloading latest version of k8s/coreos for vagrant")
-    zippath = os.path.join(name, "master.zip")
+    zippath = os.path.join("master.zip")
 
     if not os.path.exists(zippath):
         for cnt in range(1, 4):
             try:
                 download("https://github.com/erikdejonge/k8svag-createproject/archive/master.zip", zippath)
-                unzip("master.zip", name)
+                unzip("master.zip")
                 break
             except zipfile.BadZipFile as zex:
                 if cnt > 2:
                     console(zex, " - try again, attempt:", cnt, color="orange")
     else:
         try:
-            unzip("master.zip", name)
+            unzip("master.zip")
         except zipfile.BadZipFile:
             try:
                 download("https://github.com/erikdejonge/k8svag-createproject/archive/master.zip", zippath)
-                unzip("master.zip", name)
+                unzip("master.zip")
             except zipfile.BadZipFile as zex:
                 console_exception(zex)
                 console_warning("could not unzip clusterfiles", print_stack=True)
                 raise SystemExit()
-
-
-def get_argument_project_name(commandline):
-    """
-    @type commandline: VagrantArguments
-    @return: None
-    """
-    tname = None
-
-    for tnameiter in commandline.args:
-        tname = tnameiter
-        break
-
-    return tname
 
 
 def bring_vms_up(provider):
@@ -423,7 +567,7 @@ def get_working_directory(commandline):
     @type commandline: VagrantArguments
     @return: None
     """
-    tname = get_argument_project_name(commandline)
+    tname = commandline.projectname
     retname = tname
 
     if tname is None:
@@ -440,6 +584,16 @@ def get_working_directory(commandline):
             if os.path.exists(vagrantfile):
                 retname = tname
                 commandline.workingdir = os.path.dirname(vagrantfile)
+            else:
+                vagrantfile = os.path.join(os.getcwd(), "Vagrantfile")
+
+                if os.path.exists(vagrantfile):
+                    if len(commandline.m_argv) > 0:
+                        commandline.args.append(commandline.m_argv[-1:][0])
+
+                    retname = os.path.basename(os.path.dirname(vagrantfile))
+                    commandline.projectname = retname
+                    commandline.workingdir = os.path.dirname(vagrantfile)
 
     project_found = commandline.workingdir is not None
     if project_found is True:
@@ -450,130 +604,6 @@ def get_working_directory(commandline):
         retname = "?"
 
     return project_found, retname
-
-
-def driver_vagrant(commandline):
-    """
-    @type commandline: VagrantArguments
-    @return: None
-    """
-    console("CoreOs Vagrant Kubernetes Cluster", plaintext=True, color="green")
-
-    if hasattr(commandline, "help") and commandline.help is True:
-        return
-
-    if commandline.command is None:
-        raise AssertionError("no command set")
-
-    project_found, name = get_working_directory(commandline)
-    if not project_found and commandline.command != "createproject":
-        abort(commandline.command, "project [" + name + "] not found")
-    else:
-        info(commandline.command, "project [" + name + "] found in [" + os.getcwd() + "]")
-
-    if commandline.command == "createproject":
-        if project_found:
-            abort(commandline.command, "project file exist, refusing overwrite")
-
-        while True:
-            answer = query_yes_no("projectname ok?: " + name, force=commandline.force)
-
-            if answer is True:
-                break
-            elif answer is False:
-                name = doinput("projectname?")
-            else:
-                raise SystemExit()
-
-        create_project_folder(commandline, name)
-        commandline = set_working_dir(commandline, name)
-        download_and_unzip_k8svagrant_project(commandline, name)
-        try:
-            configure_generic_cluster_files_for_this_machine(commandline)
-        except BaseException as be:
-            console_exception(be)
-            delete_directory(str(commandline.workingdir), ['master.zip'])
-
-        run_cmd("vagrant box update")
-        readytoboot = True
-
-        if readytoboot:
-            provider = get_provider()
-            run_vagrant_starting_procedure(commandline, provider)
-
-        return
-    elif commandline.command == "up":
-        provider = get_provider()
-        bring_vms_up(provider)
-    elif commandline.command == "halt":
-        run_cmd("vagrant halt")
-    elif commandline.command == "coreostoken":
-        print_coreos_token_stdout()
-    else:
-        abort(commandline.command, "not implemented")
-        console(commandline)
-
-# def main():
-# """
-#     main
-#     """
-#     parser = ArgumentParser(description="Vagrant controller, argument 'all' is whole cluster")
-#     parser.add_argument("-s", "--ssh", dest="ssh", help="vagrant ssh", nargs='*')
-#     parser.add_argument("-c", "--command", dest="command", help="execute command on cluster", nargs="*")
-#     parser.add_argument("-f", "--status", dest="sshconfig", help="status of cluster or when name is given print config of ssh connections", nargs='*')
-#     parser.add_argument("-u", "--up", dest="up", help="vagrant up")
-#     parser.add_argument("-d", "--destroy", dest="destroy", help="vagrant destroy -f", action="store_true")
-#     parser.add_argument("-k", "--halt", dest="halt", help="vagrant halt")
-#     parser.add_argument("-q", "--provision", dest="provision", help="provision server with playbook (server:playybook)")
-#     parser.add_argument("-r", "--reload", dest="reload", help="vagrant reload", nargs='*')
-#     parser.add_argument("-a", "--replacecloudconfig", dest="replacecloudconfig", help="replacecloudconfigs and reboot", action="store_true")
-#     parser.add_argument("-t", "--token", dest="token", help="print a new token", action="store_true")
-#     parser.add_argument("-w", "--wait", dest="wait", help="wait between server (-1 == enter)")
-#     parser.add_argument("-l", "--localizemachine", dest="localizemachine", help="apply specific configuration for a machine", nargs='*')
-#     parser.add_argument("-p", "--parallel", dest="parallel", help="parallel execution", action="store_true")
-#     parser.add_argument("-x", "--check", dest="check", help="ansible-playbook dry-run", action="store_true")
-#     # echo "generate new token"
-#     options, unknown = parser.parse_known_args()
-#     if not path.exists("Vagrantfile"):
-#         print("== Error: no Vagrantfile in directory ==")
-#         return
-#     if not path.exists(".cl"):
-#         os.mkdir(".cl")
-#     provider = None
-#     vmhostosx = False
-#     if options.localizemachine is not None:
-#         options.localizemachine = list(options.localizemachine)
-#         # noinspection PyTypeChecker
-
-#         if len(options.localizemachine) == 0:
-#             options.localizemachine = 1
-#         else:
-#             options.localizemachine = 2
-#     provider, vmhostosx = localize(options, provider, vmhostosx)
-#     if options.localizemachine:
-#         return
-#     if options.token:
-#         print_coreos_token_stdout()
-#     elif options.ssh is not None:
-#         connect_ssh(options)
-#     elif options.sshconfig is not None:
-#         sshconfig(options)
-#     elif options.command:
-#         remote_command(options)
-#     elif options.up:
-#         bring_vms_up(options, provider, vmhostosx)
-#     elif options.destroy:
-#         destroy_vagrant_cluster()
-#     elif options.halt:
-#         haltvagrantcluster(options)
-#     elif options.provision:
-#         provision_ansible(options)
-#     elif options.reload:
-#         reload_vagrant_cluster(options)
-#     elif options.replacecloudconfig:
-#         replacecloudconfig(options, vmhostosx)
-#     else:
-#         parser.print_help()
 
 
 def get_num_instances():
@@ -598,7 +628,7 @@ def get_vm_names(retry=False):
             return []
 
         if path.exists(picklepath):
-            l = sorted([x[0] for x in pickle.load(open(picklepath))])
+            l = sorted([x[0] for x in pickle.load(open(picklepath, "rb"))])
             return l
 
         vmnames = []
@@ -914,29 +944,28 @@ def localize_config(commandline, vmhostosx):
     return True
 
 
-def connect_ssh(options):
+def shell(cmd):
     """
-    @type options: str, unicode
+    """
+
+    return subprocess.call(cmd, shell=True)
+
+
+def connect_ssh(server):
+    """
+    @type server: str
     @return: None
     """
-    if len(options.ssh) == 1:
-        options.ssh = options.ssh[0]
-    else:
-        options.ssh = 1
-
-    index = None
-    try:
-        index = int(options.ssh)
-
-        if index <= 0:
-            index = 1
-    except Exception as e:
-        print(e)
-
     cnt = 0
     vmnames = get_vm_names()
 
-    if options.ssh not in vmnames:
+    if server not in vmnames:
+        try:
+            index = int(server)
+        except ValueError:
+            index = None
+
+    if server not in vmnames:
         for name in vmnames:
             cnt += 1
 
@@ -946,7 +975,7 @@ def connect_ssh(options):
 
                 while True:
                     try:
-                        if run_cmd(cmd) != 0:
+                        if shell(cmd) != 0:
                             print("connection lost, trying in 1 seconds (ctrl-c to quit)")
                             time.sleep(1)
                         else:
@@ -955,7 +984,7 @@ def connect_ssh(options):
                         print()
                         break
 
-                if options.ssh != 'all':
+                if server != 'all':
                     break
             else:
                 if index == cnt:
@@ -964,7 +993,7 @@ def connect_ssh(options):
 
                     while True:
                         try:
-                            if run_cmd(cmd) != 0:
+                            if shell(cmd) != 0:
                                 print("connection lost, trying in 1 seconds (ctrl-c to quit)")
                                 time.sleep(1)
                             else:
@@ -973,24 +1002,24 @@ def connect_ssh(options):
                             print()
                             break
 
-                    if options.ssh != 'all':
+                    if server != 'all':
                         break
         else:
-            cnt = 0
-            print("server", options.ssh, "not found, options are:")
-            print()
+            info("ssh", "server " + server + " not found, options are:")
+            answers = []
 
             for name in vmnames:
-                cnt += 1
-                print(str(cnt) + ".", name)
+                answers.append(name)
 
-            print()
+            inputserver = doinput("enter number", answers=answers)
+            cmd = "vagrant ssh " + inputserver
+            shell(cmd)
     else:
-        if options.ssh == 'all':
+        if server == 'all':
             print("vagrant ssh all is not possible")
         else:
-            cmd = "vagrant ssh " + options.ssh
-            run_cmd(cmd)
+            cmd = "vagrant ssh " + server
+            shell(cmd)
 
 
 def sshconfig(options):
@@ -1046,65 +1075,51 @@ def print_remote_command_result(result, lastoutput=""):
     @type lastoutput: str
     @return: None
     """
-    if "\n" in result.strip():
-        if result != lastoutput:
-            print("\n\n\033[37m" + str(result), "\033[0m")
-        else:
-            print("same")
+    if result != lastoutput:
+        console(result, color="grey")
     else:
-        if result != lastoutput:
-            print("\n\n\033[37m", result, "\033[0m")
-        else:
-            print("same")
+        console("same", color="grey")
 
     return result
 
 
-def remote_command(options):
+def remote_command(command, parallel, wait=False, server=None, timeout=60):
     """
-    @type options: str, unicode
+    @type command: str
+    @type parallel: bool
+    @type wait: bool
+    @type server: None, str
+    @type timeout: int
     @return: None
     """
-    server = None
+    if parallel is True:
+        info(command, "execute parallel")
 
-    if len(options.command) == 1:
-        options.command = options.command[0]
-    elif len(options.command) == 2:
-        server = options.command[0]
-        options.command = options.command[1]
-    else:
-        raise AssertionError(options.command)
-
-    if options.parallel is True:
-        print("\033[36mremote\033[0m\033[32m parallel\033[0m\033[36m command:\033[0m\033[33m", options.command, "\033[0m")
-    else:
-        print("\033[36mremote command:\033[0m\033[33m", options.command, "\033[0m")
-
-    if server:
-        print("\033[36mon:\033[0m\033[33m", server, "\033[0m", end=' ')
+    if server is not None:
+        info(command, "on server " + server)
 
     if server is None:
         vmnames = get_vm_names()
 
-        if options.command not in vmnames:
+        if command not in vmnames:
             commands = []
 
             for name in vmnames:
-                cmd = options.command
+                cmd = command
 
-                if options.parallel is True:
+                if parallel is True:
                     commands.append((name + '.a8.nl', cmd))
                 else:
-                    result = remote_cmd(name + '.a8.nl', cmd)
+                    result = remote_cmd(name + '.a8.nl', cmd, timeout=timeout)
 
                     if result.strip():
-                        print("\033[36mon:\033[0m\033[33m", name + "\033[0m", end=' ')
+                        info(command, "on server " + name)
                         print_remote_command_result(result)
                     else:
-                        print("\033[36mon:\033[0m\033[33m", name, "\033[0m\033[36m... done\033[0m")
+                        info(command, "on server " + name + "...done")
 
-                    if options.wait is not None:
-                        if str(options.wait) == "-1":
+                    if wait is not None:
+                        if str(wait) == "-1":
                             try:
                                 iquit = eval(input("continue (y/n): "))
 
@@ -1114,7 +1129,7 @@ def remote_command(options):
                                 print()
                                 break
                         else:
-                            time.sleep(float(options.wait))
+                            time.sleep(float(wait))
 
             if len(commands) > 0:
                 workers = cpu_count()
@@ -1128,40 +1143,36 @@ def remote_command(options):
 
                 for server, result in result:
                     if result.strip():
-                        print("\033[36mon:\033[0m\033[33m", server.split(".")[0] + "\033[0m", end=' ')
+                        warning(command, server.split(".")[0])
                         lastoutput = print_remote_command_result(result, lastoutput)
                     else:
-                        print("\033[36mon:\033[0m\033[33m", server.split(".")[0] + "\033[0m\033[36m... done\033[0m")
+                        warning(command, server.split(".")[0] + "... done")
     else:
-        cmd = options.command
+        cmd = command
         result = remote_cmd(server + '.a8.nl', cmd)
 
         if result:
             print_remote_command_result(result)
-        else:
-            print("\033[37m", "done", "\033[0m")
 
 
 def destroy_vagrant_cluster():
     """
     destroy_vagrant_cluster
     """
-    cmd = "vagrant destroy  -f"
-    run_cmd(cmd)
     cwd = os.getcwd()
-    picklepath = os.path.join(cwd, ".cl/vmnames.pickle")
+    try:
+        cmd = "vagrant destroy -f"
+        run_cmd(cmd)
 
-    if path.exists(picklepath):
-        os.remove(picklepath)
-        os.system("rm -Rf .cl")
+        for vmx in str(os.popen("vmrun list")):
+            if ".vmx" in vmx:
+                vmx = vmx.strip()
+                run_cmd("vmrun stop " + vmx + " > /dev/null &")
+                run_cmd("vmrun deleteVM " + vmx + " > /dev/null &")
 
-    run_cmd("rm -Rf .vagrant")
-
-    for vmx in str(os.popen("vmrun list")):
-        if ".vmx" in vmx:
-            vmx = vmx.strip()
-            run_cmd("vmrun stop " + vmx + " > /dev/null &")
-            run_cmd("vmrun deleteVM " + vmx + " > /dev/null &")
+    finally:
+        os.chdir(os.path.dirname(cwd))
+        shutil.rmtree(cwd)
 
 
 def provision_ansible(options):

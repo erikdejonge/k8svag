@@ -130,22 +130,23 @@ if __name__ == "__main__":
 def set_working_dir(commandline, projectname):
     """
     @type commandline: VagrantArguments
-    @return: VagrantArgument
+    @type projectname: str
+    @return: None
     """
     if commandline.workingdir is None:
         vagrantfile = os.path.join(os.getcwd(), "Vagrantfile.tpl.rb")
 
         if os.path.exists(vagrantfile):
             commandline.workingdir = os.getcwd()
-            if os.path.basename(os.path.dirname(commandline.workingdir)) != projectname:
-                console_warning(projectname, os.path.basename(os.path.dirname(commandline.workingdir)))
+            if os.path.basename(os.path.dirname(str(commandline.workingdir))) != projectname:
+                console_warning(projectname, os.path.basename(os.path.dirname(str(commandline.workingdir))))
                 raise AssertionError("projectname and dirname are different")
 
     if commandline.workingdir is None:
         if projectname is not None:
             answer = query_yes_no("workingdir ok?: " + abspath(os.path.join(os.getcwd(), projectname)), force=commandline.force)
 
-            if answer == True:
+            if answer:
                 commandline.workingdir = abspath(os.path.join(os.getcwd(), projectname))
 
     if commandline.workingdir is not None and os.path.exists(commandline.workingdir):
@@ -157,6 +158,7 @@ def set_working_dir(commandline, projectname):
         else:
             abort(commandline.command, "no workingdir set")
 
+    os.chdir(str(commandline.workingdir))
     return commandline
 
 
@@ -190,7 +192,7 @@ def configure_generic_cluster_files_for_this_machine(commandline):
 
     func_extra_config = None
     vagranthome = commandline.workingdir
-    mod_extra_config_path = path.join(vagranthome, "extra_config_vagrant.py")
+    mod_extra_config_path = path.join(str(vagranthome), "extra_config_vagrant.py")
 
     if os.path.exists(mod_extra_config_path):
         try:
@@ -272,12 +274,12 @@ def create_project_folder(commandline, name):
 
         if answerdel is False:
             raise SystemExit()
-        elif answerdel == True:
+        elif answerdel:
             delete_directory(name, ["master.zip"])
         else:
             ans = query_yes_no(question="reuse previous downloaded file?: " + name, force=commandline.force)
 
-            if ans == False:
+            if not ans:
                 abort(commandline.command, "path not empty")
                 raise SystemExit()
             else:
@@ -316,6 +318,10 @@ def download_and_unzip_k8svagrant_project(commandline, name):
 
 
 def get_argument_project_name(commandline):
+    """
+    @type commandline: VagrantArguments
+    @return: None
+    """
     tname = None
 
     for tnameiter in commandline.args:
@@ -360,12 +366,13 @@ def info_run_cmd(cmd):
     """
     try:
         console(run_cmd(cmd), prefix=cmd, color="blue")
-    except ChildProcessError as ce:
-        exit(1)
+    except ChildProcessError as ex:
+        console_error_exit(str(ex))
 
 
 def run_vagrant_starting_procedure(commandline, provider):
     """
+    @type commandline: VagrantArguments
     @type provider: str
     @return: None
     """
@@ -392,9 +399,9 @@ def run_vagrant_starting_procedure(commandline, provider):
     newtoken = get_token()
 
     if osx:
-        to_file("config/tokenosx.txt", newtoken)
+        to_file("config/tokenosx.txt", str(newtoken))
     else:
-        to_file("config/tokenlinux.txt", newtoken)
+        to_file("config/tokenlinux.txt", str(newtoken))
 
     if osx:
         info_run_cmd("sudo vmnet-cli --stop")
@@ -459,8 +466,7 @@ def driver_vagrant(commandline):
         raise AssertionError("no command set")
 
     project_found, name = get_working_directory(commandline)
-
-    if not project_found:
+    if not project_found and commandline.command != "createproject":
         abort(commandline.command, "project [" + name + "] not found")
     else:
         info(commandline.command, "project [" + name + "] found in [" + os.getcwd() + "]")
@@ -486,7 +492,7 @@ def driver_vagrant(commandline):
             configure_generic_cluster_files_for_this_machine(commandline)
         except BaseException as be:
             console_exception(be)
-            delete_directory(commandline.workdir)
+            delete_directory(str(commandline.workingdir), ['master.zip'])
 
         run_cmd("vagrant box update")
         readytoboot = True
@@ -1156,9 +1162,6 @@ def destroy_vagrant_cluster():
             vmx = vmx.strip()
             run_cmd("vmrun stop " + vmx + " > /dev/null &")
             run_cmd("vmrun deleteVM " + vmx + " > /dev/null &")
-
-
-
 
 
 def provision_ansible(options):

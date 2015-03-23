@@ -1076,9 +1076,9 @@ def print_remote_command_result(result, lastoutput=""):
     @return: None
     """
     if result != lastoutput:
-        console(result, color="grey")
+        console(result, color="darkgreen", plainprint=True)
     else:
-        console("same", color="grey")
+        console("same", color="darkgreen", plainprint=True)
 
     return result
 
@@ -1110,7 +1110,7 @@ def remote_command(command, parallel, wait=False, server=None, timeout=60):
                 if parallel is True:
                     commands.append((name + '.a8.nl', cmd))
                 else:
-                    result = remote_cmd(name + '.a8.nl', cmd, timeout=timeout)
+                    result = remote_cmd(name + '.a8.nl', cmd, timeout=timeout, username='core')
 
                     if result.strip():
                         info(command, "on server " + name)
@@ -1149,7 +1149,7 @@ def remote_command(command, parallel, wait=False, server=None, timeout=60):
                         warning(command, server.split(".")[0] + "... done")
     else:
         cmd = command
-        result = remote_cmd(server + '.a8.nl', cmd)
+        result = remote_cmd(server + '.a8.nl', cmd, username='core')
 
         if result:
             print_remote_command_result(result)

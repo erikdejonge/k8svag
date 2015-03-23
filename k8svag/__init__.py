@@ -437,7 +437,7 @@ def get_working_directory(commandline):
     project_found = commandline.workingdir is not None
     if project_found is True:
         os.chdir(str(commandline.workingdir))
-        retname = os.path.basename(commandline.workingdir)
+        retname = os.path.basename(str(commandline.workingdir))
 
     if retname is None:
         retname = "?"
@@ -500,7 +500,7 @@ def driver_vagrant(commandline):
         provider = get_provider()
         bring_vms_up(provider)
     elif commandline.command == "halt":
-        haltvagrantcluster()
+        run_cmd("vagrant halt")
     elif commandline.command == "coreostoken":
         print_coreos_token_stdout()
     else:
@@ -1158,17 +1158,7 @@ def destroy_vagrant_cluster():
             run_cmd("vmrun deleteVM " + vmx + " > /dev/null &")
 
 
-def haltvagrantcluster(options):
-    """
-    @type options: str, unicode
-    @return: None
-    """
-    if options.halt == 'all':
-        cmd = "vagrant halt"
-    else:
-        cmd = "vagrant halt " + options.halt
 
-    run_cmd(cmd)
 
 
 def provision_ansible(options):

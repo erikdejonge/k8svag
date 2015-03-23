@@ -97,7 +97,7 @@ import readline
 from tempfile import NamedTemporaryFile
 from multiprocessing import Pool, cpu_count
 from os import path
-from cmdssh import run_cmd, remote_cmd, remote_cmd_map, run_scp
+from cmdssh import run_cmd, remote_cmd, remote_cmd_map, run_scp, shell
 from consoleprinter import console, query_yes_no, console_warning, console_exception, console_error_exit
 from arguments import Schema, Use, BaseArguments, abspath, abort, warning, unzip, download, delete_directory, info, doinput
 readline.parse_and_bind('tab: complete')
@@ -122,6 +122,7 @@ class VagrantArguments(BaseArguments):
         self.command = None
         self.createproject = None
         self.parallel = False
+        self.wait = 0
         self.projectname = ""
         doc = """
             Vagrant cluster management
@@ -144,16 +145,17 @@ class VagrantArguments(BaseArguments):
                 createproject           Create a Coreos Kubernetes cluster in local directory
                 destroy                 Destroy vagrant cluster (vagrant destroy -f)
                 halt                    Halt vagrant cluster (vagrant halt)
-                ansibleplaybook         Provision server with ansible-playbook (server:playbook)
+                ansibleplaybook         Provision server with ansible-playbook (ansibleplaybook <project> (<servers>:<nameplaybook> ...))
                 reload                  Reload cluster (vagrant reload)
                 replacecloudconfig      Replace all coreos-cloudconfigs and reboot
                 ssh                     Make ssh connection into specific machine
                 status                  Status of cluster or machine
                 up                      Bring cluster up
         """
-        self.validcommands = ["createproject", "up", "coreostoken", "halt", "destroy", "remotecommand", "ssh"]
+        self.validcommands = ["createproject", "up", "coreostoken", "halt", "destroy", "remotecommand", "ssh", "baseprovision", "ansibleplaybook", "replacecloudconfig"]
         validateschema = Schema({'command': Use(self.validcommand)})
         self.set_command_help("up", "Start all vm's in the cluster")
+        self.set_command_help("ansibleplaybook", "Example vagrant ansibleplaybook myproject all:myplaybook.yml all:anotherplaybook.yml")
         super(VagrantArguments, self).__init__(doc, validateschema, parent=parent)
 
     @property
@@ -237,15 +239,37 @@ def driver_vagrant(commandline):
         print_coreos_token_stdout()
     elif commandline.command == "destroy":
         destroy_vagrant_cluster()
+    elif commandline.command == "replacecloudconfig":
+        replacecloudconfig(commandline.wait)
+    elif commandline.command == "ansibleplaybook":
+        for serverplaybook in commandline.args:
+            print(serverplaybook)
+
+        # provision_ansible(options)
+        # provision_ansible(options)
     elif commandline.command == "baseprovision":
         info(commandline.command, "make commands on server")
-        remote_command("date", False)
+
+        if "no such" in run_cmd("ls", streamoutput=False):
+            remote_command("sudo mkdir /root/pypy&&sudo ln -s /home/core/bin /root/pypy/bin;", commandline.parallel)
+            provision_ansible("all:./playbooks/ansiblebootstrap.yml")
+            password = doinput("testansible password", default="", force=commandline.force)
+            provision_ansible("all:./playbooks/testansible.yml:" + password)
+            vagrantsecure = os.path.join(os.getcwd(), "keys/secure/vagrantsecure")
+
+            if os.path.exists(vagrantsecure):
+                os.remove(vagrantsecure)
+                os.remove(vagrantsecure + ".pub")
+
+            run_cmd("ssh-keygen -t rsa -C \"core user vagrant\" -b 4096 -f ./vagrantsecure -N \"\"", cwd=os.path.join(os.getcwd(), "keys/secure"))
+
+            provision_ansible("all:./playbooks/keyswap.yml")
+        replacecloudconfig(commandline.wait)
     elif commandline.command == "ssh":
-        if len(commandline.args) == 1:
-            connect_ssh(commandline.args[0])
-        else:
+        if len(commandline.args) != 1:
             abort(commandline.command, "No server given, [cbx vagrant ssh servername]")
 
+        connect_ssh(str(commandline.args[0]))
     elif commandline.command == "remotecommand":
         if len(commandline.args) == 0:
             abort(commandline.command, "no remote command entered [...vagrant <projectname> <remotecommand>]")
@@ -634,7 +658,7 @@ def get_vm_names(retry=False):
         vmnames = []
         numinstances = None
 
-        # noinspection PyBroadException
+        # noinspection PyBroadException #     #    #    ^ pycharm d1rect1ve 0
         try:
             numinstances = get_num_instances()
             osx = is_osx()
@@ -944,13 +968,6 @@ def localize_config(commandline, vmhostosx):
     return True
 
 
-def shell(cmd):
-    """
-    """
-
-    return subprocess.call(cmd, shell=True)
-
-
 def connect_ssh(server):
     """
     @type server: str
@@ -1111,7 +1128,7 @@ def remote_command(command, parallel, wait=False, server=None, timeout=60):
                     commands.append((name + '.a8.nl', cmd))
                 else:
                     result = remote_cmd(name + '.a8.nl', cmd, timeout=timeout, username='core')
-
+                    print(result)
                     if result.strip():
                         info(command, "on server " + name)
                         print_remote_command_result(result)
@@ -1175,14 +1192,14 @@ def destroy_vagrant_cluster():
         shutil.rmtree(cwd)
 
 
-def provision_ansible(options):
+def provision_ansible(serverplaybook):
     """
-    @type options: str, unicode
+    @type serverplaybook: str
     @return: None
     """
-    sp = options.provision.split(":")
+    sp = serverplaybook.split(":")
     password = None
-    f = NamedTemporaryFile(delete=False)
+    f = NamedTemporaryFile(delete=False, mode="w+t")
 
     if len(sp) > 2:
         targetvmname, playbook, password = sp
@@ -1201,15 +1218,11 @@ def provision_ansible(options):
             vmnames = get_vm_names()
 
             if targetvmname == "all":
-                cmd = "ansible-playbook -u core --inventory-file=" + path.join(os.getcwdu(), "hosts") + "  -u core --limit=all " + playbook
+                cmd = "ansible-playbook -u core --inventory-file=" + path.join(os.getcwd(), "hosts") + "  -u core --limit=all " + playbook
 
                 if password is not None:
                     cmd += " --vault-password-file " + f.name
-
-                if options.check:
-                    cmd += " --check"
-
-                run_cmd(cmd)
+                run_cmd(cmd, prefix=serverplaybook)
             else:
                 for vmname in vmnames:
                     if targetvmname == vmname:
@@ -1218,11 +1231,7 @@ def provision_ansible(options):
 
                         if password is not None:
                             cmd += " --vault-password-file " + f.name
-
-                        if options.check:
-                            cmd += " --check"
-
-                        run_cmd(cmd)
+                        run_cmd(cmd, prefix=serverplaybook)
                     else:
                         print("skipping", vmname)
         else:
@@ -1280,18 +1289,20 @@ def write_new_tokens(vmhostosx):
         open(tlin, "w").write(token)
 
 
-def replacecloudconfig(options, vmhostosx):
+def replacecloudconfig(wait):
     """
-    @type options: argparse.Nam
-    espace
-    @type vmhostosx: str, unicode
+    @type wait: int
     @return: None
     """
+    vmhostosx = is_osx()
     write_new_tokens(vmhostosx)
+
     run_cmd("rm -f " + os.path.join(os.getcwd(), "./configscripts") + "/user-data*")
+
     console("Replace cloudconfiguration, checking vms are up")
-    p = subprocess.Popen(["/usr/bin/vagrant", "up"], cwd=os.getcwdu())
+    p = subprocess.Popen(["/usr/bin/vagrant", "up"], cwd=os.getcwd())
     p.wait()
+
     vmnames = get_vm_names()
     knownhosts = path.join(path.join(path.expanduser("~"), ".ssh"), "known_hosts")
 
@@ -1305,14 +1316,15 @@ def replacecloudconfig(options, vmhostosx):
 
             # rsa_private_key = path.join(os.getcwd(), "keys/secure/vagrantsecure")
             run_scp(server=name + '.a8.nl', cmdtype="put", fp1="configscripts/user-data" + str(cnt) + ".yml", fp2="/tmp/vagrantfile-user-data", username="core")
+
             cmd = "sudo cp /tmp/vagrantfile-user-data /var/lib/coreos-vagrant/vagrantfile-user-data"
             remote_cmd(name + '.a8.nl', cmd)
             print("\033[37m", name, "uploaded config, rebooting now", "\033[0m")
 
-            if options.wait:
-                print("wait: ", options.wait)
+            if wait:
+                print("wait: ", wait)
 
-            logpath = path.join(os.getcwdu(), "logs/" + name + "-serial.txt")
+            logpath = path.join(os.getcwd(), "logs/" + name + "-serial.txt")
 
             if path.exists(path.dirname(logpath)):
                 open(logpath, "w").write("")
@@ -1320,8 +1332,8 @@ def replacecloudconfig(options, vmhostosx):
             cmd = "sudo reboot"
             remote_cmd(name + '.a8.nl', cmd)
 
-            if options.wait is not None:
-                if str(options.wait) == "-1":
+            if wait is not None:
+                if str(wait) == "-1":
                     try:
                         iquit = eval(input("\n\n---\npress enter to continue (q=quit): "))
                         if iquit.strip() == "q":
@@ -1332,7 +1344,7 @@ def replacecloudconfig(options, vmhostosx):
                         print()
                         break
                 else:
-                    time.sleep(float(options.wait))
+                    time.sleep(float(wait))
 
             cnt += 1
 

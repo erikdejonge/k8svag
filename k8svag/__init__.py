@@ -87,7 +87,7 @@ class VagrantArguments(BaseArguments):
                 up <name>               Bring cluster up
                 kubernetes              Kubernetes commands
         """
-        self.validcommands = ["createproject", "up", "coreostoken"]
+        self.validcommands = ["createproject", "up", "coreostoken", "halt"]
         validateschema = Schema({'command': Use(self.validcommand)})
         self.set_command_help("up", "Start all vm's in the cluster")
         super(VagrantArguments, self).__init__(doc, validateschema, parent=parent)
@@ -117,7 +117,6 @@ def run_commandline(parent=None):
     @return: None
     """
     commandline = VagrantArguments(parent)
-
     driver_vagrant(commandline)
 
 
@@ -159,15 +158,6 @@ def set_working_dir(commandline, projectname):
             abort(commandline.command, "no workingdir set")
 
     return commandline
-
-
-def header(commandline):
-    """
-    @type commandline: VagrantArguments
-    @return: None
-    """
-    console("CoreOs Vagrant Kubernetes Cluster", plaintext=True, color="blue")
-    console("command:", commandline.command, plaintext=True, color="grey")
 
 
 def configure_generic_cluster_files_for_this_machine(commandline):
@@ -352,16 +342,27 @@ def bring_vms_up(provider):
 
 
 def is_osx():
+    """
+    is_osx
+    """
     osx = False
+
     if str(os.popen("uname -a").read()).startswith("Darwin"):
         osx = True
+
     return osx
 
+
 def info_run_cmd(cmd):
+    """
+    @type cmd: str
+    @return: None
+    """
     try:
         console(run_cmd(cmd), prefix=cmd, color="blue")
     except ChildProcessError as ce:
         exit(1)
+
 
 def run_vagrant_starting_procedure(commandline, provider):
     """
@@ -370,26 +371,31 @@ def run_vagrant_starting_procedure(commandline, provider):
     """
     default_gateway = None
     gateways = netifaces.gateways()
+
     for gws in gateways:
         if gws == "default":
             for gw in gateways[gws]:
                 for gw2 in gateways[gws][gw]:
                     if "." in gw2:
                         default_gateway = gw2
+
     if default_gateway is None:
         abort(commandline.command, "default gateway could not be found")
     else:
-        info(commandline.command, "default gateway: "+default_gateway)
+        info(commandline.command, "default gateway: " + default_gateway)
         to_file("config/gateway.txt", default_gateway)
 
     osx = is_osx()
-    #info_run_cmd("ssh-add keys/insecure/vagrant")
+
+    # info_run_cmd("ssh-add keys/insecure/vagrant")
     bring_vms_up(provider)
     newtoken = get_token()
+
     if osx:
         to_file("config/tokenosx.txt", newtoken)
     else:
         to_file("config/tokenlinux.txt", newtoken)
+
     if osx:
         info_run_cmd("sudo vmnet-cli --stop")
         time.sleep(1)
@@ -400,95 +406,101 @@ def run_vagrant_starting_procedure(commandline, provider):
         time.sleep(1)
         info_run_cmd("sudo /usr/bin/vmware-networks --start")
         time.sleep(2)
+
     info_run_cmd("rm -f ~/.ssh/known_hosts")
     info_run_cmd("vagrant up")
+
+
+def get_working_directory(commandline):
+    """
+    @type commandline: VagrantArguments
+    @return: None
+    """
+    tname = get_argument_project_name(commandline)
+    retname = tname
+
+    if tname is None:
+        tname = os.path.basename(os.getcwd())
+
+    if tname is not None:
+        vagrantfile = os.path.join(os.path.join(os.path.dirname(os.getcwd()), str(tname)), "Vagrantfile")
+
+        if os.path.exists(vagrantfile):
+            commandline.workingdir = os.getcwd()
+        else:
+            vagrantfile = os.path.join(os.path.join(os.getcwd(), str(tname)), "Vagrantfile")
+
+            if os.path.exists(vagrantfile):
+                retname = tname
+                commandline.workingdir = os.path.dirname(vagrantfile)
+
+    project_found = commandline.workingdir is not None
+    if project_found is True:
+        os.chdir(str(commandline.workingdir))
+        retname = os.path.basename(commandline.workingdir)
+
+    if retname is None:
+        retname = "?"
+
+    return project_found, retname
+
 
 def driver_vagrant(commandline):
     """
     @type commandline: VagrantArguments
     @return: None
     """
+    console("CoreOs Vagrant Kubernetes Cluster", plaintext=True, color="green")
+
     if hasattr(commandline, "help") and commandline.help is True:
         return
 
     if commandline.command is None:
         raise AssertionError("no command set")
 
+    project_found, name = get_working_directory(commandline)
+
+    if not project_found:
+        abort(commandline.command, "project [" + name + "] not found")
+    else:
+        info(commandline.command, "project [" + name + "] found in [" + os.getcwd() + "]")
+
     if commandline.command == "createproject":
-        header(commandline)
-        name = None
-        alreadyconfigured = False
+        if project_found:
+            abort(commandline.command, "project file exist, refusing overwrite")
 
-        if not alreadyconfigured:
-            tname = get_argument_project_name(commandline)
+        while True:
+            answer = query_yes_no("projectname ok?: " + name, force=commandline.force)
 
-            if tname is None:
-                tname = os.path.basename(os.getcwd())
-
-            if tname is not None:
-                vagrantfile = os.path.join(os.path.join(os.path.dirname(os.getcwd()), str(tname)), "Vagrantfile")
-
-                if os.path.exists(vagrantfile):
-                    commandline.workingdir = os.getcwd()
-                else:
-                    vagrantfile = os.path.join(os.path.join(os.getcwd(), str(tname)), "Vagrantfile")
-
-                    if os.path.exists(vagrantfile):
-                        commandline.workingdir = os.getcwd()
-
-                if not os.path.exists(vagrantfile):
-                    while True:
-                        answer = query_yes_no("projectname ok?: " + tname, force=commandline.force)
-
-                        if answer is True:
-                            name = tname
-                            break
-                        elif answer is False:
-                            tname = doinput("projectname?")
-                        else:
-                            raise SystemExit()
-                else:
-                    os.chdir(os.path.dirname(vagrantfile))
-                    alreadyconfigured = True
-                    name = tname
-
-            readytoboot = False
-
-            if name and alreadyconfigured is False:
-                create_project_folder(commandline, name)
-                commandline = set_working_dir(commandline, name)
-                download_and_unzip_k8svagrant_project(commandline, name)
-                try:
-                    configure_generic_cluster_files_for_this_machine(commandline)
-                except BaseException as be:
-                    console_exception(be)
-                    delete_directory(commandline.workdir)
-
-                run_cmd("vagrant box update")
-                readytoboot = True
-            elif alreadyconfigured is True:
-                if commandline.workingdir is None:
-                    commandline.workingdir = abspath(os.path.join(os.getcwd(), str(tname)))
-
-                readytoboot = True
+            if answer is True:
+                break
+            elif answer is False:
+                name = doinput("projectname?")
             else:
-                abort(commandline.command, "no name")
+                raise SystemExit()
 
-            if readytoboot:
-                provider = get_provider()
-                run_vagrant_starting_procedure(commandline, provider)
+        create_project_folder(commandline, name)
+        commandline = set_working_dir(commandline, name)
+        download_and_unzip_k8svagrant_project(commandline, name)
+        try:
+            configure_generic_cluster_files_for_this_machine(commandline)
+        except BaseException as be:
+            console_exception(be)
+            delete_directory(commandline.workdir)
+
+        run_cmd("vagrant box update")
+        readytoboot = True
+
+        if readytoboot:
+            provider = get_provider()
+            run_vagrant_starting_procedure(commandline, provider)
 
         return
     elif commandline.command == "up":
-        tname = get_argument_project_name(commandline)
-        vagrantfile = os.path.join(os.path.join(os.getcwd(), str(tname)), "Vagrantfile")
-
-        if os.path.exists(vagrantfile):
-            provider = get_provider()
-            bring_vms_up(provider)
-        else:
-            abort(commandline.command, "No Vagrantfile found")
-
+        provider = get_provider()
+        bring_vms_up(provider)
+    elif commandline.command == "halt":
+        haltvagrantcluster()
     elif commandline.command == "coreostoken":
         print_coreos_token_stdout()
     else:
@@ -565,7 +577,6 @@ def get_num_instances():
     v = open("Vagrantfile").read()
     numinstances = int(v[v.find("num_instances") + (v[v.find("num_instances"):].find("=")):].split("\n")[0].replace("=", "").strip())
     return numinstances
-
 
 
 def get_vm_names(retry=False):

@@ -32,7 +32,7 @@ DEBUGMODE = False
 #     parser.add_argument("-u", "--up", dest="up", help="vagrant up")
 #     parser.add_argument("-d", "--destroy", dest="destroy", help="vagrant destroy -f", action="store_true")
 #     parser.add_argument("-k", "--halt", dest="halt", help="vagrant halt")
-#     parser.add_argument("-q", "--provision", dest="provision", help="provision server with playbook (server:playybook)")
+#     parser.add_argument("-q", "--provision", dest="provision", help="provision server with playbook (server:playbook)")
 #     parser.add_argument("-r", "--reload", dest="reload", help="vagrant reload", nargs='*')
 #     parser.add_argument("-a", "--replacecloudconfig", dest="replacecloudconfig", help="replacecloudconfigs and reboot", action="store_true")
 #     parser.add_argument("-t", "--token", dest="token", help="print a new token", action="store_true")
@@ -95,7 +95,8 @@ import shutil
 import netifaces
 import readline
 from tempfile import NamedTemporaryFile
-from multiprocessing import Pool, cpu_count
+#from multiprocessing import Pool, cpu_count
+import concurrent.futures
 from os import path
 from cmdssh import run_cmd, remote_cmd, remote_cmd_map, run_scp, shell
 from consoleprinter import console, query_yes_no, console_warning, console_exception, console_error_exit
@@ -145,7 +146,7 @@ class VagrantArguments(BaseArguments):
                 createproject           Create a Coreos Kubernetes cluster in local directory
                 destroy                 Destroy vagrant cluster (vagrant destroy -f)
                 halt                    Halt vagrant cluster (vagrant halt)
-                ansibleplaybook         Provision server with ansible-playbook (ansibleplaybook <project> (<servers>:<nameplaybook> ...))
+                ansibleplaybook         Provision server with ansible-playbook <project> (<servers>:<nameplaybook>) ..
                 reload                  Reload cluster (vagrant reload)
                 replacecloudconfig      Replace all coreos-cloudconfigs and reboot
                 ssh                     Make ssh connection into specific machine
@@ -1124,7 +1125,7 @@ def remote_command(command, parallel, wait=False, server=None, timeout=60):
                 cmd = command
 
                 if parallel is True:
-                    commands.append((name + '.a8.nl', cmd))
+                    commands.append((name + '.a8.nl', cmd, 'core'))
                 else:
                     result = remote_cmd(name + '.a8.nl', cmd, timeout=timeout, username='core')
 
@@ -1148,21 +1149,23 @@ def remote_command(command, parallel, wait=False, server=None, timeout=60):
                             time.sleep(float(wait))
 
             if len(commands) > 0:
-                workers = cpu_count()
+                #workers = cpu_count()
 
-                if workers > len(commands):
-                    workers = len(commands)
+                #if workers > len(commands):
+                #    workers = len(commands)
 
-                expool = Pool(workers + 1)
-                result = expool.map(remote_cmd_map, commands)
-                lastoutput = ""
+                #expool = Pool(workers + 1)
+                with concurrent.futures.ProcessPoolExecutor(max_workers=8) as executor:
+                    result = executor.map(remote_cmd_map, commands)
+                #result = expool.map(remote_cmd_map, commands)
+                    lastoutput = ""
 
-                for server, result in result:
-                    if result.strip():
-                        warning(command, server.split(".")[0])
-                        lastoutput = print_remote_command_result(result, lastoutput)
-                    else:
-                        warning(command, server.split(".")[0] + "... done")
+                    for server, result in result:
+                        if result.strip():
+                            warning(command, server.split(".")[0])
+                            lastoutput = print_remote_command_result(result, lastoutput)
+                        else:
+                            warning(command, server.split(".")[0] + "... done")
     else:
         cmd = command
         result = remote_cmd(server + '.a8.nl', cmd, username='core')
@@ -1317,7 +1320,7 @@ def replacecloudconfig(wait):
             run_scp(server=name + '.a8.nl', cmdtype="put", fp1="configscripts/user-data" + str(cnt) + ".yml", fp2="/tmp/vagrantfile-user-data", username="core")
 
             cmd = "sudo cp /tmp/vagrantfile-user-data /var/lib/coreos-vagrant/vagrantfile-user-data"
-            remote_cmd(name + '.a8.nl', cmd)
+            remote_cmd(name + '.a8.nl', cmd, username='core')
             print("\033[37m", name, "uploaded config, rebooting now", "\033[0m")
 
             if wait:
@@ -1329,7 +1332,7 @@ def replacecloudconfig(wait):
                 open(logpath, "w").write("")
 
             cmd = "sudo reboot"
-            remote_cmd(name + '.a8.nl', cmd)
+            remote_cmd(name + '.a8.nl', cmd, username='core')
 
             if wait is not None:
                 if str(wait) == "-1":

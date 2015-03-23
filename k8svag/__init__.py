@@ -250,20 +250,19 @@ def driver_vagrant(commandline):
     elif commandline.command == "baseprovision":
         info(commandline.command, "make commands on server")
 
-        if "no such" in run_cmd("ls", streamoutput=False):
-            remote_command("sudo mkdir /root/pypy&&sudo ln -s /home/core/bin /root/pypy/bin;", commandline.parallel)
-            provision_ansible("all:./playbooks/ansiblebootstrap.yml")
-            password = doinput("testansible password", default="", force=commandline.force)
-            provision_ansible("all:./playbooks/testansible.yml:" + password)
-            vagrantsecure = os.path.join(os.getcwd(), "keys/secure/vagrantsecure")
+        remote_command("sudo mkdir /root/pypy&&sudo ln -s /home/core/bin /root/pypy/bin;", commandline.parallel)
+        provision_ansible("all:./playbooks/ansiblebootstrap.yml")
+        password = doinput("testansible password", default="", force=commandline.force)
+        provision_ansible("all:./playbooks/testansible.yml:" + password)
+        vagrantsecure = os.path.join(os.getcwd(), "keys/secure/vagrantsecure")
 
-            if os.path.exists(vagrantsecure):
-                os.remove(vagrantsecure)
-                os.remove(vagrantsecure + ".pub")
+        if os.path.exists(vagrantsecure):
+            os.remove(vagrantsecure)
+            os.remove(vagrantsecure + ".pub")
 
-            run_cmd("ssh-keygen -t rsa -C \"core user vagrant\" -b 4096 -f ./vagrantsecure -N \"\"", cwd=os.path.join(os.getcwd(), "keys/secure"))
+        run_cmd("ssh-keygen -t rsa -C \"core user vagrant\" -b 4096 -f ./vagrantsecure -N \"\"", cwd=os.path.join(os.getcwd(), "keys/secure"))
 
-            provision_ansible("all:./playbooks/keyswap.yml")
+        provision_ansible("all:./playbooks/keyswap.yml")
         replacecloudconfig(commandline.wait)
     elif commandline.command == "ssh":
         if len(commandline.args) != 1:
@@ -351,7 +350,7 @@ def input_vagrant_parameters(commandline):
             warning(commandline.command, "invalid input, resetting to 2")
             numcpus = 2
 
-        gui = query_yes_no("show vm gui?", default=True, force=commandline.force)
+        gui = query_yes_no("show vm gui?", default=False, force=commandline.force)
         instances = doinput("number of server instances?", default=4, force=commandline.force)
         try:
             instances = int(instances)
@@ -1128,7 +1127,7 @@ def remote_command(command, parallel, wait=False, server=None, timeout=60):
                     commands.append((name + '.a8.nl', cmd))
                 else:
                     result = remote_cmd(name + '.a8.nl', cmd, timeout=timeout, username='core')
-                    print(result)
+
                     if result.strip():
                         info(command, "on server " + name)
                         print_remote_command_result(result)

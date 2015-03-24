@@ -190,6 +190,7 @@ def driver_vagrant(commandline):
     @type commandline: VagrantArguments
     @return: None
     """
+
     if hasattr(commandline, "help") and commandline.help is True:
         return
 

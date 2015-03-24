@@ -24,7 +24,7 @@ setup(name='k8svag',
       #install_requires=['paramiko', 'python-vagrant', 'consoleprinter', 'cmdssh'],
       entry_points={
           'console_scripts': [
-              'cbx=k8svag:main',
+              'k8svag=k8svag:main',
           ],
       },
       classifiers=[

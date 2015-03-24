@@ -67,7 +67,7 @@ DEBUGMODE = False
 #     elif options.sshconfig is not None:
 #         sshconfig(options)
 #     elif options.command:
-#         remote_command(options)
+#         sshcmd_remote_command(options)
 #     elif options.up:
 #         bring_vms_up(options, provider, vmhostosx)
 #     elif options.destroy:
@@ -124,7 +124,8 @@ class VagrantArguments(BaseArguments):
         self.commandline = None
         self.command = None
         self.createproject = None
-        self.parallel = False
+        self.serial = True
+        self.parallel = not self.serial
         self.wait = 0
         self.projectname = ""
         doc = """
@@ -135,7 +136,7 @@ class VagrantArguments(BaseArguments):
 
             Options:
                 -h --help               Show this screen.
-                -p --parallel           Execute commands in parallel (ansible style).
+                -s --serial             Execute commands in serial, default is parallel execution
                 -v --verbose            Verbose mode.
                 -f --force              Do not ask for confirmation
                 -w --wait=<ws>          Wait <ws> seconds between commands.
@@ -186,21 +187,21 @@ def driver_vagrant(commandline):
     @return: None
     """
     if hasattr(commandline, "help") and commandline.help is True:
-        #print()
+        print()
 
         print(commandline.m_doc)
         return
 
     console("CoreOs Vagrant Kubernetes Cluster", plaintext=True, color="green")
-
+    commandline.parallel = not commandline.serial
     if commandline.command is None:
         raise AssertionError("no command set")
 
     project_found, name = get_working_directory(commandline)
     if not project_found and commandline.command != "createproject":
-        abort(commandline.command, "project [" + name + "] not found")
+        abort(commandline.command, "A k8svag environment is required.\nRun 'k8svag createproject' or change to a directory\nwith a 'Vagrantfile' and '.cl' folder in it.")
     else:
-        info(commandline.command, "project [" + name + "] found in [" + os.getcwd() + "]")
+        info(commandline.command, "project '" + name + " found in '" + os.getcwd() + "'")
 
     if commandline.command == "createproject":
         if project_found:
@@ -254,8 +255,9 @@ def driver_vagrant(commandline):
         # provision_ansible(options)
         # provision_ansible(options)
     elif commandline.command == "baseprovision":
+
         info(commandline.command, "make commands on server")
-        remote_command("sudo mkdir /root/pypy&&sudo ln -s /home/core/bin /root/pypy/bin;", commandline.parallel)
+        sshcmd_remote_command("sudo mkdir /root/pypy&&sudo ln -s /home/core/bin /root/pypy/bin;", commandline.parallel)
         provision_ansible("all:./playbooks/ansiblebootstrap.yml")
         password = doinput("testansible password", default="", force=commandline.force)
         provision_ansible("all:./playbooks/testansible.yml:" + password)
@@ -274,10 +276,12 @@ def driver_vagrant(commandline):
 
         connect_ssh(str(commandline.args[0]))
     elif commandline.command == "sshcmd":
+        #print(commandline)
+
         if len(commandline.args) == 0:
             abort(commandline.command, "no remote command entered [...vagrant <projectname> <sshcmd>]")
         try:
-            remote_command(commandline.args[0], commandline.parallel, timeout=5)
+            sshcmd_remote_command(commandline.args[0], commandline.parallel, timeout=5)
         except socket.timeout as ex:
             abort("sshcmd: " + commandline.args[0], "exception -> " + str(ex))
     else:
@@ -1073,7 +1077,7 @@ def sshconfig(options):
         run_cmd(cmd)
 
 
-def print_remote_command_result(result, lastoutput=""):
+def print_sshcmd_remote_command_result(result, lastoutput=""):
     """
     @type result: str, unicode
     @type lastoutput: str
@@ -1087,7 +1091,7 @@ def print_remote_command_result(result, lastoutput=""):
     return result
 
 
-def remote_command(command, parallel, wait=False, server=None, timeout=60):
+def sshcmd_remote_command(command, parallel, wait=False, server=None, timeout=60):
     """
     @type command: str
     @type parallel: bool
@@ -1118,7 +1122,7 @@ def remote_command(command, parallel, wait=False, server=None, timeout=60):
 
                     if result.strip():
                         info(command, "on server " + name)
-                        print_remote_command_result(result)
+                        print_sshcmd_remote_command_result(result)
                     else:
                         info(command, "on server " + name + "...done")
 
@@ -1149,7 +1153,7 @@ def remote_command(command, parallel, wait=False, server=None, timeout=60):
                     for server, result in result:
                         if result.strip():
                             warning(command, server.split(".")[0])
-                            lastoutput = print_remote_command_result(result, lastoutput)
+                            lastoutput = print_sshcmd_remote_command_result(result, lastoutput)
                         else:
                             warning(command, server.split(".")[0] + "... done")
     else:
@@ -1157,7 +1161,7 @@ def remote_command(command, parallel, wait=False, server=None, timeout=60):
         result = remote_cmd(server + '.a8.nl', cmd, username='core')
 
         if result:
-            print_remote_command_result(result)
+            print_sshcmd_remote_command_result(result)
 
 
 def destroy_vagrant_cluster():

@@ -3,8 +3,8 @@ Kubernetes Vagrant Provisioning and management script
 
 ```
 pip install k8svag
-cbx vagrant createproject myproject
-cbx vagrant up myproject
+k8svag createproject myproject
+k8svag up myproject
 ``
 
 ###usage

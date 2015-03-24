@@ -28,7 +28,7 @@ DEBUGMODE = False
 #     parser = ArgumentParser(description="Vagrant controller, argument 'all' is whole cluster")
 #     parser.add_argument("-s", "--ssh", dest="ssh", help="vagrant ssh", nargs='*')
 #     parser.add_argument("-c", "--command", dest="command", help="execute command on cluster", nargs="*")
-#     parser.add_argument("-f", "--status", dest="sshconfig", help="status of cluster or when name is given print config of ssh connections", nargs='*')
+#     parser.add_argument("-f", "--status", dest="statuscluster", help="status of cluster or when name is given print config of ssh connections", nargs='*')
 #     parser.add_argument("-u", "--up", dest="up", help="vagrant up")
 #     parser.add_argument("-d", "--destroy", dest="destroy", help="vagrant destroy -f", action="store_true")
 #     parser.add_argument("-k", "--halt", dest="halt", help="vagrant halt")
@@ -64,8 +64,8 @@ DEBUGMODE = False
 #         print_coreos_token_stdout()
 #     elif options.ssh is not None:
 #         connect_ssh(options)
-#     elif options.sshconfig is not None:
-#         sshconfig(options)
+#     elif options.statuscluster is not None:
+#         statuscluster(options)
 #     elif options.command:
 #         sshcmd_remote_command(options)
 #     elif options.up:
@@ -143,23 +143,27 @@ class VagrantArguments(BaseArguments):
                 -d --workingdir=<wrkd>  Directory to execute commands in, default is current working dir.
 
             Commands:
-                ansibleplaybook         Provision server with ansible-playbook <project> (<servers>:<nameplaybook>) ..
-                baseprovision           Apply configuration, createproject calls this.
-                coreostoken             Print coreos token to stdout
-                createproject           Create a Coreos Kubernetes cluster in local directory
-                destroy                 Destroy vagrant cluster (vagrant destroy -f)
-                halt                    Halt vagrant cluster (vagrant halt)
-                reload                  Reload cluster (vagrant reload)
-                reset                   Reset cloudconfig settings and replace on cluster, reboots cluster
-                ssh                     Make ssh connection into specific machine
-                sshcmd                  Execute command on cluster (remote command)
-                status                  Status of cluster or machine
-                up                      Bring cluster up
+                ansible        Provision cluster with ansible-playbook(s) [(<labelservers>:<nameplaybook>) ..]
+                baseprovision  Apply configuration, createproject calls this.
+                coreostoken    Print coreos token to stdout
+                createproject  Create a Coreos Kubernetes cluster in local directory
+                destroy        Destroy vagrant cluster (vagrant destroy -f)
+                halt           Halt vagrant cluster (vagrant halt)
+                reload         Reload cluster (vagrant reload)
+                reset          Reset cloudconfig settings and replace on cluster, reboots cluster
+                ssh            Make ssh connection into specific machine
+                sshcmd         Execute command on cluster (remote command)
+                status         Status of cluster or machine
+                up             Bring cluster up
+
         """
-        self.validcommands = ["createproject", "up", "coreostoken", "halt", "destroy", "sshcmd", "ssh", "baseprovision", "ansibleplaybook", "replacecloudconfig"]
+        self.validcommands = ['ansible', 'baseprovision', 'coreostoken', 'createproject', 'destroy', 'halt', 'reload', 'replacecloudconfig', 'ssh', 'sshcmd', 'status', 'up']
         validateschema = Schema({'command': Use(self.validcommand)})
         self.set_command_help("up", "Start all vm's in the cluster")
-        self.set_command_help("ansibleplaybook", "Example vagrant ansibleplaybook myproject all:myplaybook.yml all:anotherplaybook.yml")
+
+        self.set_command_help("status", "ssh-config data combined with other data")
+        self.set_command_help("ansible", "example: cbx ansible myproject all:myplaybook.yml core1:anotherplaybook.yml")
+
         super(VagrantArguments, self).__init__(doc, validateschema, parent=parent)
 
     @property
@@ -187,21 +191,19 @@ def driver_vagrant(commandline):
     @return: None
     """
     if hasattr(commandline, "help") and commandline.help is True:
-        print()
-
-        print(commandline.m_doc)
         return
 
     console("CoreOs Vagrant Kubernetes Cluster", plaintext=True, color="green")
     commandline.parallel = not commandline.serial
+
     if commandline.command is None:
         raise AssertionError("no command set")
 
     project_found, name = get_working_directory(commandline)
     if not project_found and commandline.command != "createproject":
-        abort(commandline.command, "A k8svag environment is required.\nRun 'k8svag createproject' or change to a directory\nwith a 'Vagrantfile' and '.cl' folder in it.")
+        abort(commandline.command, "A k8svag environment is required.Run 'k8svag createproject' or \nchange to a directory with a 'Vagrantfile' and '.cl' folder in it.")
     else:
-        info(commandline.command, "project '" + name + " found in '" + os.getcwd() + "'")
+        info(commandline.command, "project '" + name + "' found in '" + os.getcwd() + "'")
 
     if commandline.command == "createproject":
         if project_found:
@@ -234,7 +236,7 @@ def driver_vagrant(commandline):
             provider = get_provider()
             set_gateway_and_coreostoken(commandline)
             bring_vms_up(provider)
-
+            info(commandline.command, "done, make sure to run 'baseprovision' after this")
         return
     elif commandline.command == "up":
         provider = get_provider()
@@ -245,22 +247,46 @@ def driver_vagrant(commandline):
         print_coreos_token_stdout()
     elif commandline.command == "destroy":
         destroy_vagrant_cluster()
+    elif commandline.command == "reload":
+        run_cmd("vagrant reload")
+    elif commandline.command == "status":
+        run_cmd("vagrant reload")
     elif commandline.command == "replacecloudconfig":
         set_gateway_and_coreostoken(commandline)
         replacecloudconfig(commandline.wait)
-    elif commandline.command == "ansibleplaybook":
+    elif commandline.command == "ansible":
+        playbook = None
+        server = None
+        password = None
+
         for serverplaybook in commandline.args:
-            print(serverplaybook)
+            spb = serverplaybook.split(":")
 
-        # provision_ansible(options)
-        # provision_ansible(options)
+            if len(spb) == 2:
+                playbook = os.path.abspath(os.path.expanduser(spb[1]))
+                server = spb[0].strip()
+            elif len(spb) == 2:
+                playbook = os.path.abspath(os.path.expanduser(spb[1]))
+                server = spb[0].strip()
+                password = spb[2].strip()
+
+        if playbook and os.path.exists(playbook):
+            info(commandline.command, "playbook found at " + playbook)
+        else:
+            warning(commandline.command, "no playbook found at " + playbook)
+
+        if server is None:
+            abort(commandline.command, "server is None")
+        elif playbook is None:
+            abort(commandline.command, "playbook is None")
+
+        provision_ansible(server, playbook, password)
     elif commandline.command == "baseprovision":
-
         info(commandline.command, "make commands on server")
         sshcmd_remote_command("sudo mkdir /root/pypy&&sudo ln -s /home/core/bin /root/pypy/bin;", commandline.parallel)
-        provision_ansible("all:./playbooks/ansiblebootstrap.yml")
-        password = doinput("testansible password", default="", force=commandline.force)
-        provision_ansible("all:./playbooks/testansible.yml:" + password)
+        provision_ansible("all", "./playbooks/ansiblebootstrap.yml", None)
+        password = doinput("testansible password", default="")
+        provision_ansible("all", "./playbooks/testansible.yml",  password)
         vagrantsecure = os.path.join(os.getcwd(), "keys/secure/vagrantsecure")
 
         if os.path.exists(vagrantsecure):
@@ -268,7 +294,7 @@ def driver_vagrant(commandline):
             os.remove(vagrantsecure + ".pub")
 
         run_cmd("ssh-keygen -t rsa -C \"core user vagrant\" -b 4096 -f ./vagrantsecure -N \"\"", cwd=os.path.join(os.getcwd(), "keys/secure"))
-        provision_ansible("all:./playbooks/keyswap.yml")
+        provision_ansible("all", "./playbooks/keyswap.yml", None)
         replacecloudconfig(commandline.wait)
     elif commandline.command == "ssh":
         if len(commandline.args) != 1:
@@ -276,8 +302,8 @@ def driver_vagrant(commandline):
 
         connect_ssh(str(commandline.args[0]))
     elif commandline.command == "sshcmd":
-        #print(commandline)
 
+        # print(commandline)
         if len(commandline.args) == 0:
             abort(commandline.command, "no remote command entered [...vagrant <projectname> <sshcmd>]")
         try:
@@ -649,7 +675,7 @@ def get_vm_names(retry=False):
         vmnames = []
         numinstances = None
 
-        # noinspection PyBroadException #        #       #       ^ pycharm d1rect1ve 0
+        # noinspection PyBroadException #                  #                 #                 ^ pycharm d1rect1ve 0
         try:
             numinstances = get_num_instances()
             osx = is_osx()
@@ -1030,51 +1056,41 @@ def connect_ssh(server):
             shell(cmd)
 
 
-def sshconfig(options):
+def statuscluster():
     """
-    @type options: str, unicode
-    @return: None
+    statuscluster
     """
-    if len(options.sshconfig) == 1:
-        options.sshconfig = options.sshconfig[0]
-    else:
-        options.sshconfig = "all"
+    vmnames = get_vm_names()
 
-    if options.sshconfig == 'all':
-        vmnames = get_vm_names()
+    if len(vmnames) > 0:
+        for name in vmnames:
+            cmd = "vagrant ssh-config " + name
+            try:
+                if path.exists(".cl/" + name + ".statuscluster"):
+                    out = open(".cl/" + name + ".statuscluster").read()
+                else:
+                    out, eout = run_cmd(cmd, returnoutput=True)
+                    out = out.strip()
 
-        if len(vmnames) > 0:
-            for name in vmnames:
-                cmd = "vagrant ssh-config " + name
-                try:
-                    if path.exists(".cl/" + name + ".sshconfig"):
-                        out = open(".cl/" + name + ".sshconfig").read()
-                    else:
-                        out, eout = run_cmd(cmd, returnoutput=True)
-                        out = out.strip()
+                    if len(eout) == 0:
+                        open(".cl/" + name + ".statuscluster", "w").write(out)
 
-                        if len(eout) == 0:
-                            open(".cl/" + name + ".sshconfig", "w").write(out)
+                res = ""
 
-                    res = ""
+                for row in out.split("\n"):
+                    if "HostName" in row:
+                        res = row.replace("HostName", "").strip()
 
-                    for row in out.split("\n"):
-                        if "HostName" in row:
-                            res = row.replace("HostName", "").strip()
+                result = remote_cmd(name + '.a8.nl', 'cat /etc/os-release|grep VERSION_ID')
 
-                    result = remote_cmd(name + '.a8.nl', 'cat /etc/os-release|grep VERSION_ID')
-
-                    if len(res.strip()) > 0:
-                        print("\033[32m", name, res.strip(), "up", result.lower().strip(), "\033[0m")
-                    else:
-                        print("\033[31m", name, "down", "\033[0m")
-                except subprocess.CalledProcessError:
+                if len(res.strip()) > 0:
+                    print("\033[32m", name, res.strip(), "up", result.lower().strip(), "\033[0m")
+                else:
                     print("\033[31m", name, "down", "\033[0m")
-        else:
-            run_cmd("vagrant status")
+            except subprocess.CalledProcessError:
+                print("\033[31m", name, "down", "\033[0m")
     else:
-        cmd = "vagrant ssh-config " + options.sshconfig
-        run_cmd(cmd)
+        run_cmd("vagrant status")
 
 
 def print_sshcmd_remote_command_result(result, lastoutput=""):
@@ -1184,24 +1200,18 @@ def destroy_vagrant_cluster():
         shutil.rmtree(cwd)
 
 
-def provision_ansible(serverplaybook):
+def provision_ansible(targetvmname, playbook, password):
     """
-    @type serverplaybook: str
+    @type targetvmname: str
+    @type playbook: str
+    @type password: str, None
     @return: None
     """
-    sp = serverplaybook.split(":")
-    password = None
     f = NamedTemporaryFile(delete=False, mode="w+t")
 
-    if len(sp) > 2:
-        targetvmname, playbook, password = sp
+    if password is not None:
         f.write(password)
         f.seek(0)
-    elif len(sp) > 1:
-        targetvmname, playbook = sp
-    else:
-        playbook = sp[0]
-        targetvmname = "all"
 
     print("\033[34mAnsible playbook:", playbook, "\033[0m")
     p = subprocess.Popen(["python", "-m", "SimpleHTTPServer", "8000"], stdout=open("/dev/null", "w"), stderr=open("/dev/null", "w"))
@@ -1214,7 +1224,7 @@ def provision_ansible(serverplaybook):
 
                 if password is not None:
                     cmd += " --vault-password-file " + f.name
-                run_cmd(cmd, prefix=serverplaybook)
+                run_cmd(cmd, prefix=targetvmname + ":" + playbook)
             else:
                 for vmname in vmnames:
                     if targetvmname == vmname:
@@ -1223,7 +1233,7 @@ def provision_ansible(serverplaybook):
 
                         if password is not None:
                             cmd += " --vault-password-file " + f.name
-                        run_cmd(cmd, prefix=serverplaybook)
+                        run_cmd(cmd, prefix=targetvmname + ":" + playbook)
                     else:
                         print("skipping", vmname)
         else:
@@ -1231,25 +1241,6 @@ def provision_ansible(serverplaybook):
     finally:
         p.kill()
         os.remove(f.name)
-
-
-def reload_vagrant_cluster(options):
-    """
-    @type options: str, unicode
-    @return: None
-    """
-    if len(options.reload) == 1:
-        options.reload = options.reload[0]
-    else:
-        options.reload = "all"
-
-    if options.reload == "all":
-        print("reloading all")
-        run_cmd("vagrant reload")
-    else:
-        print("stop and start", options.reload)
-        run_cmd("vagrant halt -f " + str(options.reload))
-        run_cmd("vagrant up " + str(options.reload))
 
 
 def write_new_tokens(vmhostosx):

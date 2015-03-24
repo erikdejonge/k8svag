@@ -13,7 +13,7 @@ standard_library.install_aliases()
 
 from setuptools import setup
 setup(name='k8svag',
-      version='6',
+      version='7',
       description='Kubernetes Vagrant Provisioning and management script',
       url='https://github.com/erikdejonge/k8svag',
       author='Erik de Jonge',

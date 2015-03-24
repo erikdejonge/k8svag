@@ -95,7 +95,9 @@ import shutil
 import netifaces
 import readline
 from tempfile import NamedTemporaryFile
-#from multiprocessing import Pool, cpu_count
+
+# from multiprocessing import Pool, cpu_count
+
 import concurrent.futures
 from os import path
 from cmdssh import run_cmd, remote_cmd, remote_cmd_map, run_scp, shell
@@ -132,7 +134,7 @@ class VagrantArguments(BaseArguments):
                 cryptobox vagrant [options] [--] <command> [<projectname>] [<args>...]
 
             Options:
-                -h --help           Show this screen.
+                -h --help               Show this screen.
                 -p --parallel           Execute commands in parallel (ansible style).
                 -v --verbose            Verbose mode.
                 -f --force              Do not ask for confirmation
@@ -140,20 +142,20 @@ class VagrantArguments(BaseArguments):
                 -d --workingdir=<wrkd>  Directory to execute commands in, default is current working dir.
 
             Commands:
+                ansibleplaybook         Provision server with ansible-playbook <project> (<servers>:<nameplaybook>) ..
                 baseprovision           Apply configuration, createproject calls this.
                 coreostoken             Print coreos token to stdout
-                remotecommand           Execute command on cluster (remote command)
                 createproject           Create a Coreos Kubernetes cluster in local directory
                 destroy                 Destroy vagrant cluster (vagrant destroy -f)
                 halt                    Halt vagrant cluster (vagrant halt)
-                ansibleplaybook         Provision server with ansible-playbook <project> (<servers>:<nameplaybook>) ..
                 reload                  Reload cluster (vagrant reload)
-                replacecloudconfig      Replace all coreos-cloudconfigs and reboot
+                reset                   Reset cloudconfig settings and replace on cluster, reboots cluster
                 ssh                     Make ssh connection into specific machine
+                sshcmd                  Execute command on cluster (remote command)
                 status                  Status of cluster or machine
                 up                      Bring cluster up
         """
-        self.validcommands = ["createproject", "up", "coreostoken", "halt", "destroy", "remotecommand", "ssh", "baseprovision", "ansibleplaybook", "replacecloudconfig"]
+        self.validcommands = ["createproject", "up", "coreostoken", "halt", "destroy", "sshcmd", "ssh", "baseprovision", "ansibleplaybook", "replacecloudconfig"]
         validateschema = Schema({'command': Use(self.validcommand)})
         self.set_command_help("up", "Start all vm's in the cluster")
         self.set_command_help("ansibleplaybook", "Example vagrant ansibleplaybook myproject all:myplaybook.yml all:anotherplaybook.yml")
@@ -184,7 +186,8 @@ def driver_vagrant(commandline):
     @return: None
     """
     if hasattr(commandline, "help") and commandline.help is True:
-        print()
+        #print()
+
         print(commandline.m_doc)
         return
 
@@ -228,7 +231,8 @@ def driver_vagrant(commandline):
 
         if readytoboot:
             provider = get_provider()
-            run_vagrant_starting_procedure(commandline, provider)
+            set_gateway_and_coreostoken(commandline)
+            bring_vms_up(provider)
 
         return
     elif commandline.command == "up":
@@ -241,6 +245,7 @@ def driver_vagrant(commandline):
     elif commandline.command == "destroy":
         destroy_vagrant_cluster()
     elif commandline.command == "replacecloudconfig":
+        set_gateway_and_coreostoken(commandline)
         replacecloudconfig(commandline.wait)
     elif commandline.command == "ansibleplaybook":
         for serverplaybook in commandline.args:
@@ -250,7 +255,6 @@ def driver_vagrant(commandline):
         # provision_ansible(options)
     elif commandline.command == "baseprovision":
         info(commandline.command, "make commands on server")
-
         remote_command("sudo mkdir /root/pypy&&sudo ln -s /home/core/bin /root/pypy/bin;", commandline.parallel)
         provision_ansible("all:./playbooks/ansiblebootstrap.yml")
         password = doinput("testansible password", default="", force=commandline.force)
@@ -262,7 +266,6 @@ def driver_vagrant(commandline):
             os.remove(vagrantsecure + ".pub")
 
         run_cmd("ssh-keygen -t rsa -C \"core user vagrant\" -b 4096 -f ./vagrantsecure -N \"\"", cwd=os.path.join(os.getcwd(), "keys/secure"))
-
         provision_ansible("all:./playbooks/keyswap.yml")
         replacecloudconfig(commandline.wait)
     elif commandline.command == "ssh":
@@ -270,13 +273,13 @@ def driver_vagrant(commandline):
             abort(commandline.command, "No server given, [cbx vagrant ssh servername]")
 
         connect_ssh(str(commandline.args[0]))
-    elif commandline.command == "remotecommand":
+    elif commandline.command == "sshcmd":
         if len(commandline.args) == 0:
-            abort(commandline.command, "no remote command entered [...vagrant <projectname> <remotecommand>]")
+            abort(commandline.command, "no remote command entered [...vagrant <projectname> <sshcmd>]")
         try:
             remote_command(commandline.args[0], commandline.parallel, timeout=5)
         except socket.timeout as ex:
-            abort("remotecommand: " + commandline.args[0], "exception -> " + str(ex))
+            abort("sshcmd: " + commandline.args[0], "exception -> " + str(ex))
     else:
         abort(commandline.command, "not implemented")
         console(commandline)
@@ -527,21 +530,9 @@ def is_osx():
     return osx
 
 
-def info_run_cmd(cmd):
-    """
-    @type cmd: str
-    @return: None
-    """
-    try:
-        console(run_cmd(cmd), prefix=cmd, color="blue")
-    except ChildProcessError as ex:
-        console_error_exit(str(ex))
-
-
-def run_vagrant_starting_procedure(commandline, provider):
+def set_gateway_and_coreostoken(commandline):
     """
     @type commandline: VagrantArguments
-    @type provider: str
     @return: None
     """
     default_gateway = None
@@ -561,9 +552,6 @@ def run_vagrant_starting_procedure(commandline, provider):
         to_file("config/gateway.txt", default_gateway)
 
     osx = is_osx()
-
-    # info_run_cmd("ssh-add keys/insecure/vagrant")
-    bring_vms_up(provider)
     newtoken = get_token()
 
     if osx:
@@ -572,18 +560,17 @@ def run_vagrant_starting_procedure(commandline, provider):
         to_file("config/tokenlinux.txt", str(newtoken))
 
     if osx:
-        info_run_cmd("sudo vmnet-cli --stop")
+        run_cmd("sudo vmnet-cli --stop")
         time.sleep(1)
-        info_run_cmd("sudo vmnet-cli --start")
+        run_cmd("sudo vmnet-cli --start")
         time.sleep(2)
     else:
-        info_run_cmd("sudo /usr/bin/vmware-networks --stop")
+        run_cmd("sudo /usr/bin/vmware-networks --stop")
         time.sleep(1)
-        info_run_cmd("sudo /usr/bin/vmware-networks --start")
+        run_cmd("sudo /usr/bin/vmware-networks --start")
         time.sleep(2)
 
-    info_run_cmd("rm -f ~/.ssh/known_hosts")
-    info_run_cmd("vagrant up")
+    run_cmd("rm -f ~/.ssh/known_hosts")
 
 
 def get_working_directory(commandline):
@@ -658,7 +645,7 @@ def get_vm_names(retry=False):
         vmnames = []
         numinstances = None
 
-        # noinspection PyBroadException #     #    #    ^ pycharm d1rect1ve 0
+        # noinspection PyBroadException #        #       #       ^ pycharm d1rect1ve 0
         try:
             numinstances = get_num_instances()
             osx = is_osx()
@@ -1149,15 +1136,14 @@ def remote_command(command, parallel, wait=False, server=None, timeout=60):
                             time.sleep(float(wait))
 
             if len(commands) > 0:
-                #workers = cpu_count()
-
-                #if workers > len(commands):
+                # workers = cpu_count()
+                # if workers > len(commands):
                 #    workers = len(commands)
-
-                #expool = Pool(workers + 1)
+                # expool = Pool(workers + 1)
                 with concurrent.futures.ProcessPoolExecutor(max_workers=8) as executor:
                     result = executor.map(remote_cmd_map, commands)
-                #result = expool.map(remote_cmd_map, commands)
+
+                # result = expool.map(remote_cmd_map, commands)
                     lastoutput = ""
 
                     for server, result in result:
@@ -1298,13 +1284,10 @@ def replacecloudconfig(wait):
     """
     vmhostosx = is_osx()
     write_new_tokens(vmhostosx)
-
     run_cmd("rm -f " + os.path.join(os.getcwd(), "./configscripts") + "/user-data*")
-
     console("Replace cloudconfiguration, checking vms are up")
     p = subprocess.Popen(["/usr/bin/vagrant", "up"], cwd=os.getcwd())
     p.wait()
-
     vmnames = get_vm_names()
     knownhosts = path.join(path.join(path.expanduser("~"), ".ssh"), "known_hosts")
 
@@ -1318,7 +1301,6 @@ def replacecloudconfig(wait):
 
             # rsa_private_key = path.join(os.getcwd(), "keys/secure/vagrantsecure")
             run_scp(server=name + '.a8.nl', cmdtype="put", fp1="configscripts/user-data" + str(cnt) + ".yml", fp2="/tmp/vagrantfile-user-data", username="core")
-
             cmd = "sudo cp /tmp/vagrantfile-user-data /var/lib/coreos-vagrant/vagrantfile-user-data"
             remote_cmd(name + '.a8.nl', cmd, username='core')
             print("\033[37m", name, "uploaded config, rebooting now", "\033[0m")

@@ -3,7 +3,9 @@ Kubernetes Vagrant Provisioning and management script
 
 ```
 pip install k8svag
+
 k8svag createproject myproject
+
 k8svag up myproject
 ``
 

@@ -1,4 +1,4 @@
-# !/usr/bin/env python3
+#!/usr/bin/env python3
 # coding=utf-8
 """
 Cluster management tool for setting up a coreos-vagrant cluster
@@ -69,7 +69,7 @@ class VagrantArguments(BaseArguments):
             Vagrant cluster management
 
             Usage:
-                cryptobox vagrant [options] [--] <command> [<projectname>] [<args>...]
+                [options] [--] <command> [<projectname>] [<args>...]
 
             Options:
                 -h --help               Show this screen.
@@ -141,29 +141,6 @@ def baseprovision(commandline, provider):
     run_cmd("ssh-keygen -t rsa -C \"core user vagrant\" -b 4096 -f ./vagrantsecure -N \"\"", cwd=os.path.join(os.getcwd(), "keys/secure"))
     provision_ansible("all", "./playbooks/keyswap.yml", None)
     reset(commandline.wait)
-
-
-def run_commandline(parent=None):
-    """
-    @type parent: Arguments, None
-    @return: None
-    """
-    commandline = VagrantArguments(parent)
-    driver_vagrant(commandline)
-
-
-def main():
-    """
-    main
-    """
-    try:
-        run_commandline()
-    except KeyboardInterrupt:
-        print("bye")
-
-
-if __name__ == "__main__":
-    main()
 
 
 def set_working_dir(commandline, projectname):
@@ -1101,7 +1078,7 @@ def statuscluster():
                 if len(result.strip()) > 0:
                     info("statuscluster", " ".join([name, res.strip(), "up", result.lower().strip()]))
                 else:
-                    info("statuscluster", name, +" down")
+                    info("statuscluster", name + " down")
             except subprocess.CalledProcessError as cpex:
                 console_exception(cpex)
     else:
@@ -1350,3 +1327,26 @@ def print_coreos_token_stdout():
     print_coreos_token_stdout
     """
     print("\033[36m" + str(get_token()) + "\033[0m")
+
+
+def run_commandline(parent=None):
+    """
+    @type parent: Arguments, None
+    @return: None
+    """
+    commandline = VagrantArguments(parent)
+    driver_vagrant(commandline)
+
+
+def main():
+    """
+    main
+    """
+    try:
+        run_commandline()
+    except KeyboardInterrupt:
+        print("bye")
+
+
+if __name__ == "__main__":
+    main()

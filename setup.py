@@ -13,7 +13,7 @@ standard_library.install_aliases()
 
 from setuptools import setup
 setup(name='k8svag',
-      version='8',
+      version='9',
       description='Kubernetes Vagrant Provisioning and management script',
       url='https://github.com/erikdejonge/k8svag',
       author='Erik de Jonge',
@@ -21,7 +21,7 @@ setup(name='k8svag',
       license='GPL',
       packages=['k8svag'],
       zip_safe=True,
-      #install_requires=['paramiko', 'python-vagrant', 'consoleprinter', 'cmdssh'],
+      install_requires=['paramiko', 'python-vagrant', 'consoleprinter', 'cmdssh'],
       entry_points={
           'console_scripts': [
               'k8svag=k8svag:main',

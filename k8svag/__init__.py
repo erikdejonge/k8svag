@@ -419,7 +419,7 @@ def input_vagrant_parameters(commandline):
             name = doinput("projectname", default=name, force=commandline.force)
 
             while os.path.exists(os.path.join(os.getcwd(), name)):
-                ensure_project_folder(commandline, name, False)
+                ensure_project_folder(commandline, name, False, force=False)
                 name = doinput("projectname", default=name, force=False)
 
             numcpus = doinput("number of cpus on server", default=2, force=commandline.force)

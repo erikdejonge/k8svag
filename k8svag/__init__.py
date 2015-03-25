@@ -205,6 +205,143 @@ def baseprovision(commandline, provider):
     reset(commandline.wait)
 
 
+def run_commandline(parent=None):
+    """
+    @type parent: Arguments, None
+    @return: None
+    """
+    commandline = VagrantArguments(parent)
+    driver_vagrant(commandline)
+
+
+if __name__ == "__main__":
+    try:
+        run_commandline()
+    except KeyboardInterrupt:
+        print("bye")
+
+
+def set_working_dir(commandline, projectname):
+    """
+    @type commandline: VagrantArguments
+    @type projectname: str
+    @return: None
+    """
+    if commandline.workingdir is None:
+        vagrantfile = os.path.join(os.getcwd(), "Vagrantfile.tpl.rb")
+
+        if os.path.exists(vagrantfile):
+            commandline.workingdir = os.getcwd()
+            if os.path.basename(os.path.dirname(str(commandline.workingdir))) != projectname:
+                console_warning(projectname, os.path.basename(os.path.dirname(str(commandline.workingdir))))
+                raise AssertionError("projectname and dirname are different")
+
+    if commandline.workingdir is None:
+        if projectname is not None:
+            commandline.workingdir = abspath(os.path.join(os.getcwd(), projectname))
+
+    if not (commandline.workingdir is not None and os.path.exists(commandline.workingdir)):
+        if not os.path.exists(commandline.workingdir):
+            abort(commandline.command, commandline.workingdir + " does not exist")
+        else:
+            abort(commandline.command, "no workingdir set")
+
+    os.chdir(str(commandline.workingdir))
+    return commandline
+
+
+def bool_to_text(inputbool):
+    """
+    @type inputbool: bool
+    @return: None
+    """
+    if inputbool is True:
+        return "\033[32myes\033[0m"
+    else:
+        return "\033[31mno\033[0m"
+
+
+def print_config(commandline, deleteoldfiles, gui, instances, memory, name, numcpus):
+    """
+    @type commandline: VagrantArguments
+    @type deleteoldfiles: bool
+    @type gui: bool
+    @type instances: int
+    @type memory: int
+    @type name: str
+    @type numcpus: int
+    @return: None
+    """
+    print()
+
+    with Info(commandline.command, "confirmation") as groupinfo:
+        groupinfo.add("project", str(name))
+        groupinfo.add("directory", str(os.path.join(os.getcwd(), name)))
+        groupinfo.add("force project", deleteoldfiles)
+        groupinfo.add("cpu's per instance", str(numcpus))
+        groupinfo.add("headless gui", not gui)
+        groupinfo.add("number of instances", str(instances))
+        groupinfo.add("memory per instance", str(memory))
+
+
+def input_vagrant_parameters(commandline, numcpus=4, gui=False, instances=4, memory=2048, confirmed=False, deleteoldfiles=False):
+    """
+    @type commandline: VagrantArguments
+    @type numcpus : int
+    @type gui : bool
+    @type instances : int
+    @type memory : int
+    @type confirmed : bool
+    @type deleteoldfiles : bool
+    @return: None
+    """
+    name = commandline.projectname
+
+    if commandline.force is False:
+        while not confirmed:
+            name = doinput("projectname", default=name, force=commandline.force)
+            fp = os.path.join(os.getcwd(), name)
+
+            if os.path.exists(fp):
+                if len(os.listdir(fp)) > 0:
+                    deleteoldfiles = query_yes_no("force delete all files in directory:", fp, default=deleteoldfiles, force=commandline.force)
+
+            numcpus = doinput("cpus per instance", default=numcpus, force=commandline.force)
+            try:
+                numcpus = int(numcpus)
+
+                if numcpus < 2:
+                    raise ValueError("too small")
+            except ValueError as vax:
+                warning(commandline.command, str(vax) + ", resetting to 4")
+                numcpus = 4
+
+            gui = not query_yes_no("headless", default=not gui, force=commandline.force)
+            instances = doinput("clustersize", default=instances, force=commandline.force)
+            try:
+                instances = int(instances)
+            except ValueError:
+                warning(commandline.command, "instances input invalid, resetting to 2")
+                instances = 2
+
+            memory = doinput("memory per instance", default=memory, force=commandline.force)
+            try:
+                memory = int(memory)
+
+                if memory < 1024:
+                    raise ValueError("too small")
+            except ValueError as vax:
+                warning(commandline.command, str(vax) + ", resetting to 1024")
+                instances = 1024
+
+            print_config(commandline, deleteoldfiles, gui, instances, memory, name, numcpus)
+            confirmed = query_yes_no("Is this ok", default=True, force=commandline.force)
+    else:
+        print_config(commandline, deleteoldfiles, gui, instances, memory, name, numcpus)
+
+    return gui, instances, memory, numcpus, name, deleteoldfiles
+
+
 def driver_vagrant(commandline):
     """
     @type commandline: VagrantArguments
@@ -215,7 +352,6 @@ def driver_vagrant(commandline):
 
     console("Active8 => ", plaintext=True, color="orange", newline=False)
     console("CoreOS Vagrant Kubernetes Cluster", plaintext=True, color="green")
-    print()
 
     if len(commandline.args) == 0:
         if commandline.workingdir:
@@ -235,12 +371,10 @@ def driver_vagrant(commandline):
         if project_found:
             abort(commandline.command, "project file exist, refusing overwrite")
 
-        gui, numinstance, memory, numcpu, name = input_vagrant_parameters(commandline)
-        ensure_project_folder(commandline, name)
+        gui, numinstance, memory, numcpu, name, deletefiles = input_vagrant_parameters(commandline)
+        ensure_project_folder(commandline, name, deletefiles)
         commandline = set_working_dir(commandline, name)
         download_and_unzip_k8svagrant_project(commandline)
-        raise AssertionError("test")
-
         try:
             configure_generic_cluster_files_for_this_machine(commandline, gui, numinstance, memory, numcpu)
         except BaseException:
@@ -327,136 +461,10 @@ def driver_vagrant(commandline):
         console(commandline)
 
 
-def run_commandline(parent=None):
-    """
-    @type parent: Arguments, None
-    @return: None
-    """
-    commandline = VagrantArguments(parent)
-    driver_vagrant(commandline)
-
-
-if __name__ == "__main__":
-    try:
-        run_commandline()
-    except KeyboardInterrupt:
-        print("bye")
-
-
-def set_working_dir(commandline, projectname):
-    """
-    @type commandline: VagrantArguments
-    @type projectname: str
-    @return: None
-    """
-    if commandline.workingdir is None:
-        vagrantfile = os.path.join(os.getcwd(), "Vagrantfile.tpl.rb")
-
-        if os.path.exists(vagrantfile):
-            commandline.workingdir = os.getcwd()
-            if os.path.basename(os.path.dirname(str(commandline.workingdir))) != projectname:
-                console_warning(projectname, os.path.basename(os.path.dirname(str(commandline.workingdir))))
-                raise AssertionError("projectname and dirname are different")
-
-    if commandline.workingdir is None:
-        if projectname is not None:
-            answer = query_yes_no("workingdir ok?:", abspath(os.path.join(os.getcwd(), projectname)), force=commandline.force)
-
-            if answer:
-                commandline.workingdir = abspath(os.path.join(os.getcwd(), projectname))
-
-    if not (commandline.workingdir is not None and os.path.exists(commandline.workingdir)):
-        if not os.path.exists(commandline.workingdir):
-            abort(commandline.command, commandline.workingdir + " does not exist")
-        else:
-            abort(commandline.command, "no workingdir set")
-
-    os.chdir(str(commandline.workingdir))
-    return commandline
-
-
-def print_config(commandline, gui, instances, memory, name, numcpus):
-    """
-    @type commandline: VagrantArguments
-    @type gui: bool
-    @type instances: int
-    @type memory: int
-    @type name: str
-    @type numcpus: int
-    @return: None
-    """
-    sgt = ""
-
-    if gui is True:
-        sgt += "yes"
-    else:
-        sgt += "no"
-
-    with Info(commandline.command, "confirmation") as groupinfo:
-        groupinfo.add("Project", str(name))
-        groupinfo.add("Directory", str(os.path.join(os.getcwd(), name)))
-        groupinfo.add("Number CPU", str(numcpus))
-        groupinfo.add("Show GUI", sgt)
-        groupinfo.add("Number of instances", str(instances))
-        groupinfo.add("Memory per instance", str(memory))
-
-
-def input_vagrant_parameters(commandline):
-    """
-    @type commandline: VagrantArguments
-    @return: None
-    """
-    numcpus = 2
-    gui = True
-    instances = 2
-    memory = 1024
-    confirmed = False
-    name = commandline.projectname
-
-    if commandline.force is False:
-        while not confirmed:
-            commandline.force = True
-            name = doinput("projectname", default=name, force=commandline.force)
-
-            while os.path.exists(os.path.join(os.getcwd(), name)):
-                ensure_project_folder(commandline, name, False, force=False)
-                name = doinput("projectname", default=name, force=False)
-
-            numcpus = doinput("number of cpus on server", default=2, force=commandline.force)
-            try:
-                numcpus = int(numcpus)
-            except ValueError:
-                warning(commandline.command, "invalid input, resetting to 2")
-                numcpus = 2
-
-            gui = query_yes_no("show vm gui", default=False, force=commandline.force)
-            instances = doinput("number of server instances", default=4, force=commandline.force)
-            try:
-                instances = int(instances)
-            except ValueError:
-                warning(commandline.command, "instances input invalid, resetting to 2")
-                instances = 2
-
-            memory = doinput("server memory in mb", default=2048, force=commandline.force)
-            try:
-                memory = int(memory)
-            except ValueError:
-                warning(commandline.command, "memory input invalid, resetting to 1024")
-                instances = 1024
-
-            commandline.force = False
-            print_config(commandline, gui, instances, memory, name, numcpus)
-            confirmed = query_yes_no("Is this ok?", default=False, force=commandline.force)
-    else:
-        print_config(commandline, gui, instances, memory, name, numcpus)
-
-    return gui, instances, memory, numcpus, name
-
-
 def configure_generic_cluster_files_for_this_machine(commandline, gui, numinstance, memory, numcpu):
     """
     @type commandline: VagrantArguments
-    @type gui: str
+    @type gui: int
     @type numinstance: int
     @type memory: str
     @type numcpu: int
@@ -522,41 +530,29 @@ def configure_generic_cluster_files_for_this_machine(commandline, gui, numinstan
     return provider, vmhost
 
 
-def ensure_project_folder(commandline, name, createfolder=False, force=None):
+def ensure_project_folder(commandline, name, deletefiles):
     """
     @type commandline: VagrantArguments
     @type name: str
-    @type createfolder: bool
-    @type force: str, None, bool
+    @type deletefiles: bool
     @return: None
     """
-    if force is None:
-        force = commandline.force
-
     if not os.path.exists(name):
-        if createfolder is True:
-            info(commandline.command, "creating projectfolder: " + name)
-            os.mkdir(name)
-
+        info(commandline.command, "creating projectfolder: " + name)
+        os.mkdir(name)
     elif not os.path.isdir(name):
         abort(commandline.command, "workdir path is file")
         raise SystemExit()
     elif not len(os.listdir(name)) == 0:
-        answerdel = query_yes_no("delete all files in directory?:", name, default=not force, force=force)
-
-        if answerdel is False:
+        if deletefiles is False:
             abort(commandline.command, "path not empty")
             raise SystemExit()
-        elif answerdel:
-            delete_directory(name, ["master.zip"])
         else:
-            ans = query_yes_no("reuse previous downloaded file?:", name, force=force)
+            delete_directory(name, [])
 
-            if not ans:
-                abort(commandline.command, "path not empty")
-                raise SystemExit()
-            else:
-                delete_directory(name, ["master.zip"])
+    if not len(os.listdir(name)) == 0:
+        abort(commandline.command, "path not empty", stack=True)
+        raise SystemExit()
 
 
 def download_and_unzip_k8svagrant_project(commandline):
@@ -732,7 +728,13 @@ def get_vm_names(retry=False):
         vmnames = []
         numinstances = None
 
-        # noinspection PyBroadException #                                       #                                      #                                      ^ pycharm d1rect1ve 0 #             #            #            ^ pycharm d1rect1ve 0 #            #           #           ^ pycharm d1rect1ve keyword (not class) 1n nextl1ne 0 #           #          #          ^ pycharm d1rect1ve keyword (not class) 1n nextl1ne 0
+        # noinspection PyBroadException #
+
+        # #                                        #
+        # ^ pycharm d1rect1ve 0 #               #              #              ^
+        # pycharm d1rect1ve 0 #              #             #             ^ pycharm
+        # d1rect1ve keyword (not class) 1n nextl1ne 0 #             #            #
+        # ^ pycharm d1rect1ve keyword (not class) 1n nextl1ne 0
         try:
             numinstances = get_num_instances()
             osx = is_osx()

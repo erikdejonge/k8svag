@@ -213,8 +213,9 @@ def driver_vagrant(commandline):
     if hasattr(commandline, "help") and commandline.help is True:
         return
 
-
-    console("CoreOs Vagrant Kubernetes Cluster 🚀", plaintext=True, color="green")
+    console("Active8 => ", plaintext=True, color="orange", newline=False)
+    console("CoreOS Vagrant Kubernetes Cluster", plaintext=True, color="green")
+    print()
 
     if len(commandline.args) == 0:
         if commandline.workingdir:
@@ -227,21 +228,19 @@ def driver_vagrant(commandline):
     if not project_found and commandline.command != "createproject":
         abort(commandline.command, "A k8svag environment is required.Run 'k8svag createproject' or \nchange to a directory with a 'Vagrantfile' and '.cl' folder in it.")
     else:
-        if not commandline.command in ["createproject"]:
+        if commandline.command not in ["createproject"]:
             info(commandline.command, "project '" + name + "' found in '" + os.getcwd() + "'")
 
     if commandline.command == "createproject":
         if project_found:
             abort(commandline.command, "project file exist, refusing overwrite")
 
-
         gui, numinstance, memory, numcpu, name = input_vagrant_parameters(commandline)
-
-
-        create_project_folder(commandline, name)
+        ensure_project_folder(commandline, name)
         commandline = set_working_dir(commandline, name)
-
         download_and_unzip_k8svagrant_project(commandline)
+        raise AssertionError("test")
+
         try:
             configure_generic_cluster_files_for_this_machine(commandline, gui, numinstance, memory, numcpu)
         except BaseException:
@@ -376,6 +375,32 @@ def set_working_dir(commandline, projectname):
     return commandline
 
 
+def print_config(commandline, gui, instances, memory, name, numcpus):
+    """
+    @type commandline: VagrantArguments
+    @type gui: bool
+    @type instances: int
+    @type memory: int
+    @type name: str
+    @type numcpus: int
+    @return: None
+    """
+    sgt = ""
+
+    if gui is True:
+        sgt += "yes"
+    else:
+        sgt += "no"
+
+    with Info(commandline.command, "confirmation") as groupinfo:
+        groupinfo.add("Project", str(name))
+        groupinfo.add("Directory", str(os.path.join(os.getcwd(), name)))
+        groupinfo.add("Number CPU", str(numcpus))
+        groupinfo.add("Show GUI", sgt)
+        groupinfo.add("Number of instances", str(instances))
+        groupinfo.add("Memory per instance", str(memory))
+
+
 def input_vagrant_parameters(commandline):
     """
     @type commandline: VagrantArguments
@@ -388,13 +413,13 @@ def input_vagrant_parameters(commandline):
     confirmed = False
     name = commandline.projectname
 
-    while not confirmed:
-        if commandline.force is False:
+    if commandline.force is False:
+        while not confirmed:
             commandline.force = True
-
             name = doinput("projectname", default=name, force=commandline.force)
+
             while os.path.exists(os.path.join(os.getcwd(), name)):
-                warning(commandline.command, "name taken.")
+                ensure_project_folder(commandline, name, False)
                 name = doinput("projectname", default=name, force=False)
 
             numcpus = doinput("number of cpus on server", default=2, force=commandline.force)
@@ -418,22 +443,12 @@ def input_vagrant_parameters(commandline):
             except ValueError:
                 warning(commandline.command, "memory input invalid, resetting to 1024")
                 instances = 1024
+
             commandline.force = False
-            sgt = ""
-
-            if gui is True:
-                sgt += "yes"
-            else:
-                sgt += "no"
-            with Info(commandline.command, "confirmation") as info:
-                info.add("Project", str(name))
-                info.add("Directory", str(os.path.join(os.getcwd(), name)))
-                info.add("Number CPU", str(numcpus))
-                info.add("Show GUI", sgt)
-                info.add("Number of instances", str(instances))
-                info.add("Memory per instance", str(memory))
-
+            print_config(commandline, gui, instances, memory, name, numcpus)
             confirmed = query_yes_no("Is this ok?", default=False, force=commandline.force)
+    else:
+        print_config(commandline, gui, instances, memory, name, numcpus)
 
     return gui, instances, memory, numcpus, name
 
@@ -507,29 +522,33 @@ def configure_generic_cluster_files_for_this_machine(commandline, gui, numinstan
     return provider, vmhost
 
 
-def create_project_folder(commandline, name):
+def ensure_project_folder(commandline, name, createfolder=False, force=None):
     """
     @type commandline: VagrantArguments
     @type name: str
     @return: None
     """
-    info(commandline.command, "creating project: " + name)
+    if force is None:
+        force = commandline.force
 
     if not os.path.exists(name):
-        os.mkdir(name)
+        if createfolder is True:
+            info(commandline.command, "creating projectfolder: " + name)
+            os.mkdir(name)
+
     elif not os.path.isdir(name):
         abort(commandline.command, "workdir path is file")
         raise SystemExit()
     elif not len(os.listdir(name)) == 0:
-        warning(commandline.command, "path not empty: " + name)
-        answerdel = query_yes_no("delete all files in directory?:", name, default=True, force=commandline.force)
+        answerdel = query_yes_no("delete all files in directory?:", name, default=not force, force=force)
 
         if answerdel is False:
+            abort(commandline.command, "path not empty")
             raise SystemExit()
         elif answerdel:
             delete_directory(name, ["master.zip"])
         else:
-            ans = query_yes_no("reuse previous downloaded file?:",name, force=commandline.force)
+            ans = query_yes_no("reuse previous downloaded file?:", name, force=force)
 
             if not ans:
                 abort(commandline.command, "path not empty")
@@ -711,7 +730,7 @@ def get_vm_names(retry=False):
         vmnames = []
         numinstances = None
 
-        # noinspection PyBroadException #                          #                         #                         ^ pycharm d1rect1ve 0
+        # noinspection PyBroadException #                                      #                                     #                                     ^ pycharm d1rect1ve 0 #            #           #           ^ pycharm d1rect1ve 0 #           #          #          ^ pycharm d1rect1ve keyword (not class) 1n nextl1ne 0 #          #         #         ^ pycharm d1rect1ve keyword (not class) 1n nextl1ne 0
         try:
             numinstances = get_num_instances()
             osx = is_osx()
@@ -822,10 +841,12 @@ def sed(oldstr, newstr, infile):
     @return: None
     """
     linelist = []
+
     with open(infile) as f:
         for item in f:
             newitem = re.sub(oldstr, newstr, item)
             linelist.append(newitem)
+
     with open(infile, "w") as f:
         f.truncate()
 
@@ -1199,7 +1220,7 @@ def sshcmd_remote_command(command, parallel, wait=False, server=None, timeout=60
                 with concurrent.futures.ProcessPoolExecutor(max_workers=8) as executor:
                     result = executor.map(remote_cmd_map, commands)
 
-                # result = expool.map(remote_cmd_map, commands)
+                    # result = expool.map(remote_cmd_map, commands)
                     lastoutput = ""
 
                     for server, result in result:

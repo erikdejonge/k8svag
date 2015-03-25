@@ -101,8 +101,8 @@ from tempfile import NamedTemporaryFile
 import concurrent.futures
 from os import path
 from cmdssh import run_cmd, remote_cmd, remote_cmd_map, run_scp, shell
-from consoleprinter import console, query_yes_no, console_warning, console_exception, console_error_exit
-from arguments import Schema, Use, BaseArguments, abspath, abort, warning, unzip, download, delete_directory, info, doinput
+from consoleprinter import console, query_yes_no, console_warning, console_exception, console_error_exit, info, doinput, warning, Info
+from arguments import Schema, Use, BaseArguments, abspath, abort, unzip, download, delete_directory
 readline.parse_and_bind('tab: complete')
 
 
@@ -213,7 +213,8 @@ def driver_vagrant(commandline):
     if hasattr(commandline, "help") and commandline.help is True:
         return
 
-    console("CoreOs Vagrant Kubernetes Cluster", plaintext=True, color="green")
+
+    console("CoreOs Vagrant Kubernetes Cluster 🚀", plaintext=True, color="green")
 
     if len(commandline.args) == 0:
         if commandline.workingdir:
@@ -226,25 +227,20 @@ def driver_vagrant(commandline):
     if not project_found and commandline.command != "createproject":
         abort(commandline.command, "A k8svag environment is required.Run 'k8svag createproject' or \nchange to a directory with a 'Vagrantfile' and '.cl' folder in it.")
     else:
-        info(commandline.command, "project '" + name + "' found in '" + os.getcwd() + "'")
+        if not commandline.command in ["createproject"]:
+            info(commandline.command, "project '" + name + "' found in '" + os.getcwd() + "'")
 
     if commandline.command == "createproject":
         if project_found:
             abort(commandline.command, "project file exist, refusing overwrite")
 
-        while True:
-            answer = query_yes_no("projectname ok?: " + name, force=commandline.force)
 
-            if answer is True:
-                break
-            elif answer is False:
-                name = doinput("projectname?")
-            else:
-                raise SystemExit()
+        gui, numinstance, memory, numcpu, name = input_vagrant_parameters(commandline)
+
 
         create_project_folder(commandline, name)
         commandline = set_working_dir(commandline, name)
-        gui, numinstance, memory, numcpu = input_vagrant_parameters(commandline)
+
         download_and_unzip_k8svagrant_project(commandline)
         try:
             configure_generic_cluster_files_for_this_machine(commandline, gui, numinstance, memory, numcpu)
@@ -257,8 +253,10 @@ def driver_vagrant(commandline):
 
         if readytoboot:
             provider = get_provider()
+            run_cmd("vagrant reload")
             set_gateway_and_coreostoken(commandline)
             baseprovision(commandline, provider)
+            run_cmd("vagrant reload")
 
         return
     elif commandline.command == "up":
@@ -363,15 +361,12 @@ def set_working_dir(commandline, projectname):
 
     if commandline.workingdir is None:
         if projectname is not None:
-            answer = query_yes_no("workingdir ok?: " + abspath(os.path.join(os.getcwd(), projectname)), force=commandline.force)
+            answer = query_yes_no("workingdir ok?:", abspath(os.path.join(os.getcwd(), projectname)), force=commandline.force)
 
             if answer:
                 commandline.workingdir = abspath(os.path.join(os.getcwd(), projectname))
 
-    if commandline.workingdir is not None and os.path.exists(commandline.workingdir):
-        desc = "workingdir: " + str(commandline.workingdir)
-        info(commandline.command, desc)
-    else:
+    if not (commandline.workingdir is not None and os.path.exists(commandline.workingdir)):
         if not os.path.exists(commandline.workingdir):
             abort(commandline.command, commandline.workingdir + " does not exist")
         else:
@@ -390,31 +385,57 @@ def input_vagrant_parameters(commandline):
     gui = True
     instances = 2
     memory = 1024
+    confirmed = False
+    name = commandline.projectname
 
-    if commandline.force is False:
-        numcpus = doinput("number of cpus on server (default=2)?", default=2, force=commandline.force)
-        try:
-            numcpus = int(numcpus)
-        except ValueError:
-            warning(commandline.command, "invalid input, resetting to 2")
-            numcpus = 2
+    while not confirmed:
+        if commandline.force is False:
+            commandline.force = True
 
-        gui = query_yes_no("show vm gui?", default=False, force=commandline.force)
-        instances = doinput("number of server instances?", default=4, force=commandline.force)
-        try:
-            instances = int(instances)
-        except ValueError:
-            warning(commandline.command, "instances input invalid, resetting to 2")
-            instances = 2
+            name = doinput("projectname", default=name, force=commandline.force)
+            while os.path.exists(os.path.join(os.getcwd(), name)):
+                warning(commandline.command, "name taken.")
+                name = doinput("projectname", default=name, force=False)
 
-        memory = doinput("server memory in mb?", default=1024, force=commandline.force)
-        try:
-            memory = int(memory)
-        except ValueError:
-            warning(commandline.command, "memory input invalid, resetting to 1024")
-            instances = 1024
+            numcpus = doinput("number of cpus on server", default=2, force=commandline.force)
+            try:
+                numcpus = int(numcpus)
+            except ValueError:
+                warning(commandline.command, "invalid input, resetting to 2")
+                numcpus = 2
 
-    return gui, instances, memory, numcpus
+            gui = query_yes_no("show vm gui", default=False, force=commandline.force)
+            instances = doinput("number of server instances", default=4, force=commandline.force)
+            try:
+                instances = int(instances)
+            except ValueError:
+                warning(commandline.command, "instances input invalid, resetting to 2")
+                instances = 2
+
+            memory = doinput("server memory in mb", default=2048, force=commandline.force)
+            try:
+                memory = int(memory)
+            except ValueError:
+                warning(commandline.command, "memory input invalid, resetting to 1024")
+                instances = 1024
+            commandline.force = False
+            sgt = ""
+
+            if gui is True:
+                sgt += "yes"
+            else:
+                sgt += "no"
+            with Info(commandline.command, "confirmation") as info:
+                info.add("Project", str(name))
+                info.add("Directory", str(os.path.join(os.getcwd(), name)))
+                info.add("Number CPU", str(numcpus))
+                info.add("Show GUI", sgt)
+                info.add("Number of instances", str(instances))
+                info.add("Memory per instance", str(memory))
+
+            confirmed = query_yes_no("Is this ok?", default=False, force=commandline.force)
+
+    return gui, instances, memory, numcpus, name
 
 
 def configure_generic_cluster_files_for_this_machine(commandline, gui, numinstance, memory, numcpu):
@@ -501,14 +522,14 @@ def create_project_folder(commandline, name):
         raise SystemExit()
     elif not len(os.listdir(name)) == 0:
         warning(commandline.command, "path not empty: " + name)
-        answerdel = query_yes_no(question="delete all files in directory?: " + name, default=True, force=commandline.force)
+        answerdel = query_yes_no("delete all files in directory?:", name, default=True, force=commandline.force)
 
         if answerdel is False:
             raise SystemExit()
         elif answerdel:
             delete_directory(name, ["master.zip"])
         else:
-            ans = query_yes_no(question="reuse previous downloaded file?: " + name, force=commandline.force)
+            ans = query_yes_no("reuse previous downloaded file?:",name, force=commandline.force)
 
             if not ans:
                 abort(commandline.command, "path not empty")
@@ -690,7 +711,7 @@ def get_vm_names(retry=False):
         vmnames = []
         numinstances = None
 
-        # noinspection PyBroadException #                         #                        #                        ^ pycharm d1rect1ve 0
+        # noinspection PyBroadException #                          #                         #                         ^ pycharm d1rect1ve 0
         try:
             numinstances = get_num_instances()
             osx = is_osx()

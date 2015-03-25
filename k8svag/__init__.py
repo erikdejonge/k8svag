@@ -21,68 +21,6 @@ standard_library.install_aliases()
 
 DEBUGMODE = False
 
-# def main():
-# """
-#     main
-#     """
-#     parser = ArgumentParser(description="Vagrant controller, argument 'all' is whole cluster")
-#     parser.add_argument("-s", "--ssh", dest="ssh", help="vagrant ssh", nargs='*')
-#     parser.add_argument("-c", "--command", dest="command", help="execute command on cluster", nargs="*")
-#     parser.add_argument("-f", "--status", dest="statuscluster", help="status of cluster or when name is given print config of ssh connections", nargs='*')
-#     parser.add_argument("-u", "--up", dest="up", help="vagrant up")
-#     parser.add_argument("-d", "--destroy", dest="destroy", help="vagrant destroy -f", action="store_true")
-#     parser.add_argument("-k", "--halt", dest="halt", help="vagrant halt")
-#     parser.add_argument("-q", "--provision", dest="provision", help="provision server with playbook (server:playbook)")
-#     parser.add_argument("-r", "--reload", dest="reload", help="vagrant reload", nargs='*')
-#     parser.add_argument("-a", "--replacecloudconfig", dest="replacecloudconfig", help="replacecloudconfigs and reboot", action="store_true")
-#     parser.add_argument("-t", "--token", dest="token", help="print a new token", action="store_true")
-#     parser.add_argument("-w", "--wait", dest="wait", help="wait between server (-1 == enter)")
-#     parser.add_argument("-l", "--localizemachine", dest="localizemachine", help="apply specific configuration for a machine", nargs='*')
-#     parser.add_argument("-p", "--parallel", dest="parallel", help="parallel execution", action="store_true")
-#     parser.add_argument("-x", "--check", dest="check", help="ansible-playbook dry-run", action="store_true")
-#     # echo "generate new token"
-#     options, unknown = parser.parse_known_args()
-#     if not path.exists("Vagrantfile"):
-#         print("== Error: no Vagrantfile in directory ==")
-#         return
-#     if not path.exists(".cl"):
-#         os.mkdir(".cl")
-#     provider = None
-#     vmhostosx = False
-#     if options.localizemachine is not None:
-#         options.localizemachine = list(options.localizemachine)
-#         # noinspection PyTypeChecker
-
-#         if len(options.localizemachine) == 0:
-#             options.localizemachine = 1
-#         else:
-#             options.localizemachine = 2
-#     provider, vmhostosx = localize(options, provider, vmhostosx)
-#     if options.localizemachine:
-#         return
-#     if options.token:
-#         print_coreos_token_stdout()
-#     elif options.ssh is not None:
-#         connect_ssh(options)
-#     elif options.statuscluster is not None:
-#         statuscluster(options)
-#     elif options.command:
-#         sshcmd_remote_command(options)
-#     elif options.up:
-#         bring_vms_up(options, provider, vmhostosx)
-#     elif options.destroy:
-#         destroy_vagrant_cluster()
-#     elif options.halt:
-#         haltvagrantcluster(options)
-#     elif options.provision:
-#         provision_ansible(options)
-#     elif options.reload:
-#         reload_vagrant_cluster(options)
-#     elif options.replacecloudconfig:
-#         replacecloudconfig(options, vmhostosx)
-#     else:
-#         parser.print_help()
-
 import vagrant
 import os
 import re
@@ -217,8 +155,10 @@ def run_commandline(parent=None):
 if __name__ == "__main__":
     try:
         run_commandline()
-    except KeyboardInterrupt:
-        print("bye")
+    except BaseException as ex:
+        print(ex)
+    #except KeyboardInterrupt:
+    #    print("bye")
 
 
 def set_working_dir(commandline, projectname):
@@ -404,7 +344,7 @@ def driver_vagrant(commandline):
     elif commandline.command == "reload":
         run_cmd("vagrant reload")
     elif commandline.command == "status":
-        run_cmd("vagrant reload")
+        statuscluster()
     elif commandline.command == "reset":
         set_gateway_and_coreostoken(commandline)
         reset(commandline.wait)
@@ -460,6 +400,7 @@ def driver_vagrant(commandline):
         abort(commandline.command, "not implemented")
         console(commandline)
 
+    info(commandline.command, "done")
 
 def configure_generic_cluster_files_for_this_machine(commandline, gui, numinstance, memory, numcpu):
     """
@@ -716,6 +657,9 @@ def get_vm_names(retry=False):
     """
     try:
         cwd = os.getcwd()
+        cldir = os.path.join(cwd, ".cl")
+        if not os.path.exists(cldir):
+            os.mkdir(cldir)
         picklepath = os.path.join(cwd, ".cl/vmnames.pickle")
 
         if not os.path.exists(os.path.join(cwd, "Vagrantfile")):
@@ -761,7 +705,8 @@ def get_vm_names(retry=False):
 
         l = sorted([x[0] for x in vmnames])
         return l
-    except subprocess.CalledProcessError:
+    except subprocess.CalledProcessError as ex:
+        print(ex)
         if retry:
             return []
 
@@ -1076,7 +1021,7 @@ def connect_ssh(server):
                         else:
                             break
                     except KeyboardInterrupt:
-                        print()
+                        print("-connect_ssh:bye")
                         break
 
                 if server != 'all':
@@ -1094,7 +1039,7 @@ def connect_ssh(server):
                             else:
                                 break
                         except KeyboardInterrupt:
-                            print()
+                            print("-connect_ssh:bye")
                             break
 
                     if server != 'all':
@@ -1130,10 +1075,10 @@ def statuscluster():
                 if path.exists(".cl/" + name + ".statuscluster"):
                     out = open(".cl/" + name + ".statuscluster").read()
                 else:
-                    out, eout = run_cmd(cmd, returnoutput=True)
+                    out = run_cmd(cmd, returnoutput=True)
                     out = out.strip()
 
-                    if len(eout) == 0:
+                    if len(out) == 0:
                         open(".cl/" + name + ".statuscluster", "w").write(out)
 
                 res = ""
@@ -1142,14 +1087,14 @@ def statuscluster():
                     if "HostName" in row:
                         res = row.replace("HostName", "").strip()
 
-                result = remote_cmd(name + '.a8.nl', 'cat /etc/os-release|grep VERSION_ID')
+                result = remote_cmd(name + '.a8.nl', 'cat /etc/os-release|grep VERSION_ID', username="core")
 
-                if len(res.strip()) > 0:
-                    print("\033[32m", name, res.strip(), "up", result.lower().strip(), "\033[0m")
+                if len(result.strip()) > 0:
+                    info("statuscluster", " ".join([name, res.strip(), "up", result.lower().strip()]))
                 else:
-                    print("\033[31m", name, "down", "\033[0m")
-            except subprocess.CalledProcessError:
-                print("\033[31m", name, "down", "\033[0m")
+                    info("statuscluster", name, +" down")
+            except subprocess.CalledProcessError as cpex:
+                console_exception(cpex)
     else:
         run_cmd("vagrant status")
 
@@ -1211,7 +1156,7 @@ def sshcmd_remote_command(command, parallel, wait=False, server=None, timeout=60
                                 if iquit.strip() == "n":
                                     break
                             except KeyboardInterrupt:
-                                print()
+                                print("-sshcmd_remote_command:bye")
                                 break
                         else:
                             time.sleep(float(wait))
@@ -1383,7 +1328,7 @@ def reset(wait):
 
                         run_cmd("clear")
                     except KeyboardInterrupt:
-                        print()
+                        print("-reset:bye")
                         break
                 else:
                     time.sleep(float(wait))

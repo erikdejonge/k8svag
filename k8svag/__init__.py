@@ -152,13 +152,18 @@ def run_commandline(parent=None):
     driver_vagrant(commandline)
 
 
-if __name__ == "__main__":
+def main():
+    """
+    main
+    """
     try:
         run_commandline()
-    except BaseException as ex:
-        print(ex)
-    #except KeyboardInterrupt:
-    #    print("bye")
+    except KeyboardInterrupt:
+        print("bye")
+
+
+if __name__ == "__main__":
+    main()
 
 
 def set_working_dir(commandline, projectname):
@@ -401,6 +406,7 @@ def driver_vagrant(commandline):
         console(commandline)
 
     info(commandline.command, "done")
+
 
 def configure_generic_cluster_files_for_this_machine(commandline, gui, numinstance, memory, numcpu):
     """
@@ -658,8 +664,10 @@ def get_vm_names(retry=False):
     try:
         cwd = os.getcwd()
         cldir = os.path.join(cwd, ".cl")
+
         if not os.path.exists(cldir):
             os.mkdir(cldir)
+
         picklepath = os.path.join(cwd, ".cl/vmnames.pickle")
 
         if not os.path.exists(os.path.join(cwd, "Vagrantfile")):
@@ -707,6 +715,7 @@ def get_vm_names(retry=False):
         return l
     except subprocess.CalledProcessError as ex:
         print(ex)
+
         if retry:
             return []
 

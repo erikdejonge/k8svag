@@ -526,6 +526,8 @@ def ensure_project_folder(commandline, name, createfolder=False, force=None):
     """
     @type commandline: VagrantArguments
     @type name: str
+    @type createfolder: bool
+    @type force: str, None, bool
     @return: None
     """
     if force is None:
@@ -730,7 +732,7 @@ def get_vm_names(retry=False):
         vmnames = []
         numinstances = None
 
-        # noinspection PyBroadException #                                      #                                     #                                     ^ pycharm d1rect1ve 0 #            #           #           ^ pycharm d1rect1ve 0 #           #          #          ^ pycharm d1rect1ve keyword (not class) 1n nextl1ne 0 #          #         #         ^ pycharm d1rect1ve keyword (not class) 1n nextl1ne 0
+        # noinspection PyBroadException #                                       #                                      #                                      ^ pycharm d1rect1ve 0 #             #            #            ^ pycharm d1rect1ve 0 #            #           #           ^ pycharm d1rect1ve keyword (not class) 1n nextl1ne 0 #           #          #          ^ pycharm d1rect1ve keyword (not class) 1n nextl1ne 0
         try:
             numinstances = get_num_instances()
             osx = is_osx()

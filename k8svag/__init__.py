@@ -38,7 +38,7 @@ from tempfile import NamedTemporaryFile
 
 import concurrent.futures
 from os import path
-from cmdssh import run_cmd, remote_cmd, remote_cmd_map, run_scp, shell
+from cmdssh import run_cmd, remote_cmd, remote_cmd_map, run_scp, shell, CallCommandException
 from consoleprinter import console, query_yes_no, console_warning, console_exception, console_error_exit, info, doinput, warning, Info
 from arguments import Schema, Use, BaseArguments, abspath, abort, unzip, download, delete_directory
 readline.parse_and_bind('tab: complete')
@@ -60,7 +60,7 @@ class VagrantArguments(BaseArguments):
         self.reload = None
         self.replacecloudconfig = None
         self.commandline = None
-        self.command = None
+        self.command = ""
         self.createproject = None
         self.parallel = False
         self.wait = 0
@@ -69,7 +69,7 @@ class VagrantArguments(BaseArguments):
             Vagrant cluster management
 
             Usage:
-                [options] [--] <command> [<projectname>] [<args>...]
+                k8svag [options] [--] <command> [<projectname>] [<args>...]
 
             Options:
                 -h --help               Show this screen.
@@ -119,26 +119,35 @@ class VagrantArguments(BaseArguments):
             self.__workingdir = v
 
 
+def generate_keypair(cmdname, comment, privatekeypath):
+    """
+    @type cmdname: str
+    @type comment: str
+    @type privatekeypath: str
+    @return: None
+    """
+    info(cmdname, "make key " + privatekeypath)
+
+    if os.path.exists(privatekeypath):
+        os.remove(privatekeypath)
+        os.remove(privatekeypath + ".pub")
+
+    run_cmd("ssh-keygen -t rsa -C \"" + comment + "\" -b 4096 -f ./" + os.path.basename(privatekeypath) + " -N \"\"", cwd=os.path.dirname(privatekeypath))
+
+
 def baseprovision(commandline, provider):
     """
     @type commandline: VagrantArguments
     @type provider: str
     @return: None
     """
-    bring_vms_up(provider)
     info(commandline.command, "make directories on server")
     bring_vms_up(provider)
-    sshcmd_remote_command("sudo mkdir /root/pypy&&sudo ln -s /home/core/bin /root/pypy/bin;", commandline.parallel)
+    sshcmd_remote_command("sudo mkdir /root/pypy&&sudo ln -s /home/core/bin /root/pypy/bin;", commandline.parallel, keypath=get_keypaths())
     info(commandline.command, "install python container on server")
     provision_ansible("all", "./playbooks/ansiblebootstrap.yml", None)
-    info(commandline.command, "make keys")
-    vagrantsecure = os.path.join(os.getcwd(), "keys/secure/vagrantsecure")
-
-    if os.path.exists(vagrantsecure):
-        os.remove(vagrantsecure)
-        os.remove(vagrantsecure + ".pub")
-
-    run_cmd("ssh-keygen -t rsa -C \"core user vagrant\" -b 4096 -f ./vagrantsecure -N \"\"", cwd=os.path.join(os.getcwd(), "keys/secure"))
+    keypath = os.path.join(os.getcwd(), "keys/secure/vagrantsecure")
+    generate_keypair(commandline.command, "core user vagrant", keypath)
     provision_ansible("all", "./playbooks/keyswap.yml", None)
     reset(commandline.wait)
 
@@ -206,7 +215,7 @@ def print_config(commandline, deleteoldfiles, gui, instances, memory, name, numc
         groupinfo.add("memory per instance", str(memory))
 
 
-def input_vagrant_parameters(commandline, numcpus=4, gui=False, instances=4, memory=2048, confirmed=False, deleteoldfiles=False):
+def input_vagrant_parameters(commandline, numcpus=4, gui=True, instances=4, memory=2048, confirmed=False, deleteoldfiles=False):
     """
     @type commandline: VagrantArguments
     @type numcpus : int
@@ -264,6 +273,25 @@ def input_vagrant_parameters(commandline, numcpus=4, gui=False, instances=4, mem
     return gui, instances, memory, numcpus, name, deleteoldfiles
 
 
+def createproject(commandline):
+    """
+    @type commandline: VagrantArguments
+    @return: None
+    """
+    gui, numinstance, memory, numcpu, name, deletefiles = input_vagrant_parameters(commandline)
+    ensure_project_folder(commandline, name, deletefiles)
+    commandline = set_working_dir(commandline, name)
+    download_and_unzip_k8svagrant_project(commandline)
+    configure_generic_cluster_files_for_this_machine(commandline, gui, numinstance, memory, numcpu)
+    run_cmd("vagrant box update")
+    readytoboot = True
+
+    if readytoboot:
+        provider = get_provider()
+        set_gateway_and_coreostoken(commandline)
+        bring_vms_up(provider)
+
+
 def driver_vagrant(commandline):
     """
     @type commandline: VagrantArguments
@@ -279,7 +307,7 @@ def driver_vagrant(commandline):
         if commandline.workingdir:
             commandline.args.append(commandline.projectname)
 
-    if commandline.command is None:
+    if not commandline.command:
         raise AssertionError("no command set")
 
     project_found, name = get_working_directory(commandline)
@@ -292,27 +320,24 @@ def driver_vagrant(commandline):
     if commandline.command == "createproject":
         if project_found:
             abort(commandline.command, "project file exist, refusing overwrite")
-
-        gui, numinstance, memory, numcpu, name, deletefiles = input_vagrant_parameters(commandline)
-        ensure_project_folder(commandline, name, deletefiles)
-        commandline = set_working_dir(commandline, name)
-        download_and_unzip_k8svagrant_project(commandline)
         try:
-            configure_generic_cluster_files_for_this_machine(commandline, gui, numinstance, memory, numcpu)
-        except BaseException:
-            delete_directory(str(commandline.workingdir), ['master.zip'])
-            raise
+            createproject(commandline)
+            run_cmd("vagrant halt")
+        except BaseException as be:
+            shutil.rmtree(str(commandline.workingdir))
+            warning(commandline.command, str(be))
+        trycnt = 0
+        while trycnt < 5:
+            try:
+                info(commandline.command, "bring up attempt " + str(trycnt + 1))
+                run_cmd("vagrant up")
+                trycnt = 5
+                break
+            except CallCommandException as cce:
+                trycnt += 1
+                print(cce)
 
-        run_cmd("vagrant box update")
-        readytoboot = True
-
-        if readytoboot:
-            provider = get_provider()
-            run_cmd("vagrant reload")
-            set_gateway_and_coreostoken(commandline)
-            baseprovision(commandline, provider)
-            run_cmd("vagrant reload")
-
+        baseprovision(commandline, get_provider())
         return
     elif commandline.command == "up":
         provider = get_provider()
@@ -375,7 +400,7 @@ def driver_vagrant(commandline):
         else:
             cmd = commandline.args[0]
         try:
-            sshcmd_remote_command(cmd, commandline.parallel, timeout=5)
+            sshcmd_remote_command(cmd, commandline.parallel, timeout=5, keypath=get_keypaths())
         except socket.timeout as ex:
             abort("sshcmd: " + commandline.args[0], "exception -> " + str(ex))
     else:
@@ -566,16 +591,24 @@ def set_gateway_and_coreostoken(commandline):
     else:
         to_file("config/tokenlinux.txt", str(newtoken))
 
-    if osx:
-        run_cmd("sudo vmnet-cli --stop")
-        time.sleep(1)
-        run_cmd("sudo vmnet-cli --start")
-        time.sleep(2)
-    else:
-        run_cmd("sudo /usr/bin/vmware-networks --stop")
-        time.sleep(1)
-        run_cmd("sudo /usr/bin/vmware-networks --start")
-        time.sleep(2)
+    for cnt in range(1, 5):
+        try:
+            if cnt > 2:
+                info(commandline.command, str(ex) + " attempt " + str(cnt))
+
+            if osx:
+                run_cmd("sudo vmnet-cli --stop")
+                time.sleep(1)
+                run_cmd("sudo vmnet-cli --start")
+                time.sleep(2)
+            else:
+                run_cmd("sudo /usr/bin/vmware-networks --stop")
+                time.sleep(1)
+                run_cmd("sudo /usr/bin/vmware-networks --start")
+                time.sleep(2)
+            break
+        except CallCommandException as ex:
+            warning(commandline.command, str(ex) + " attempt " + str(cnt))
 
     run_cmd("rm -f ~/.ssh/known_hosts")
 
@@ -658,12 +691,6 @@ def get_vm_names(retry=False):
         numinstances = None
 
         # noinspection PyBroadException #
-
-        # #                                        #
-        # ^ pycharm d1rect1ve 0 #               #              #              ^
-        # pycharm d1rect1ve 0 #              #             #             ^ pycharm
-        # d1rect1ve keyword (not class) 1n nextl1ne 0 #             #            #
-        # ^ pycharm d1rect1ve keyword (not class) 1n nextl1ne 0
         try:
             numinstances = get_num_instances()
             osx = is_osx()
@@ -1073,7 +1100,7 @@ def statuscluster():
                     if "HostName" in row:
                         res = row.replace("HostName", "").strip()
 
-                result = remote_cmd(name + '.a8.nl', 'cat /etc/os-release|grep VERSION_ID', username="core")
+                result = remote_cmd(name + '.a8.nl', 'cat /etc/os-release|grep VERSION_ID', username="core", keypath=get_keypaths())
 
                 if len(result.strip()) > 0:
                     info("statuscluster", " ".join([name, res.strip(), "up", result.lower().strip()]))
@@ -1099,13 +1126,14 @@ def print_sshcmd_remote_command_result(result, lastoutput=""):
     return result
 
 
-def sshcmd_remote_command(command, parallel, wait=False, server=None, timeout=60):
+def sshcmd_remote_command(command, parallel, wait=False, server=None, timeout=60, keypath=None):
     """
     @type command: str
     @type parallel: bool
     @type wait: bool
     @type server: None, str
     @type timeout: int
+    @type keypath: None, str
     @return: None
     """
     if parallel is True:
@@ -1124,9 +1152,9 @@ def sshcmd_remote_command(command, parallel, wait=False, server=None, timeout=60
                 cmd = command
 
                 if parallel is True:
-                    commands.append((name + '.a8.nl', cmd, 'core'))
+                    commands.append((name + '.a8.nl', cmd, 'core', keypath))
                 else:
-                    result = remote_cmd(name + '.a8.nl', cmd, timeout=timeout, username='core')
+                    result = remote_cmd(name + '.a8.nl', cmd, timeout=timeout, username='core', keypath=keypath)
 
                     if result.strip():
                         info(command, "on server " + name)
@@ -1166,7 +1194,7 @@ def sshcmd_remote_command(command, parallel, wait=False, server=None, timeout=60
                             warning(command, server.split(".")[0] + "... done")
     else:
         cmd = command
-        result = remote_cmd(server + '.a8.nl', cmd, username='core')
+        result = remote_cmd(server + '.a8.nl', cmd, username='core', keypath=get_keypaths())
 
         if result:
             print_sshcmd_remote_command_result(result)
@@ -1265,6 +1293,16 @@ def write_new_tokens(vmhostosx):
         open(tlin, "w").write(token)
 
 
+def get_keypaths():
+    """
+    get_keypaths
+    """
+    relp = ["keys/secure/vagrantsecure", "keys/insecure/vagrant"]
+    pathrs = [os.path.join(os.getcwd(), x) for x in relp]
+    paths = [x for x in pathrs if os.path.exists(x)]
+    return paths
+
+
 def reset(wait):
     """
     @type wait: int
@@ -1286,12 +1324,10 @@ def reset(wait):
         cnt = 1
 
         for name in vmnames:
-
-            # rsa_private_key = path.join(os.getcwd(), "keys/secure/vagrantsecure")
             info("reset", name + '.a8.nl put configscript')
-            run_scp(server=name + '.a8.nl', cmdtype="put", fp1="configscripts/user-data" + str(cnt) + ".yml", fp2="/tmp/vagrantfile-user-data", username="core")
+            run_scp(server=name + '.a8.nl', cmdtype="put", fp1="configscripts/user-data" + str(cnt) + ".yml", fp2="/tmp/vagrantfile-user-data", username="core", keypath=get_keypaths())
             cmd = "sudo cp /tmp/vagrantfile-user-data /var/lib/coreos-vagrant/vagrantfile-user-data"
-            remote_cmd(name + '.a8.nl', cmd, username='core')
+            remote_cmd(name + '.a8.nl', cmd, username='core', keypath=get_keypaths())
             print("\033[37m", name, "uploaded config, rebooting now", "\033[0m")
 
             if wait:
@@ -1303,7 +1339,7 @@ def reset(wait):
                 open(logpath, "w").write("")
 
             cmd = "sudo reboot"
-            remote_cmd(name + '.a8.nl', cmd, username='core')
+            remote_cmd(name + '.a8.nl', cmd, username='core', keypath=get_keypaths())
 
             if wait is not None:
                 if str(wait) == "-1":

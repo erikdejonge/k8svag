@@ -82,11 +82,9 @@ class VagrantArguments(BaseArguments):
             Commands:
                 ansible        Provision cluster with ansible-playbook(s) [(<labelservers>:<nameplaybook>) ..]
                 baseprovision  Apply configuration, createproject calls this.
-                coreostoken    Print coreos token to stdout
                 createproject  Create a Coreos Kubernetes cluster in local directory
                 destroy        Destroy vagrant cluster (vagrant destroy -f)
                 halt           Halt vagrant cluster (vagrant halt)
-                reload         Reload cluster (vagrant reload)
                 reset          Reset cloudconfig settings and replace on cluster, reboots cluster
                 ssh            Make ssh connection into specific machine
                 sshcmd         Execute command on cluster (remote command)
@@ -144,7 +142,6 @@ def baseprovision(commandline, provider):
         shell("ssh-add keys/insecure/vagrant")
     except BaseException as ex:
         console(ex)
-
     info(commandline.command, "make directories on server")
     bring_vms_up(provider)
     sshcmd_remote_command("sudo mkdir /root/pypy&&sudo ln -s /home/core/bin /root/pypy/bin;", commandline.parallel, keypath=get_keypaths())
@@ -353,7 +350,7 @@ def driver_vagrant(commandline):
     elif commandline.command == "reload":
         run_cmd("vagrant reload")
     elif commandline.command == "status":
-        statuscluster()
+        statuscluster(commandline)
     elif commandline.command == "reset":
         set_gateway_and_coreostoken(commandline)
         reset(commandline.wait)
@@ -1039,11 +1036,11 @@ def connect_ssh(server):
         except ValueError:
             index = None
     try:
-        shell("ssh-add keys/secure/vagrantsecure")
+        run_cmd("ssh-add keys/secure/vagrantsecure")
     except BaseException as ex:
         console(ex)
     try:
-        shell("ssh-add keys/insecure/vagrant")
+        run_cmd("ssh-add keys/insecure/vagrant")
     except BaseException as ex:
         console(ex)
 
@@ -1056,15 +1053,16 @@ def connect_ssh(server):
                 while True:
                     try:
                         try:
-                            shell("ssh core@"+ name + ".a8.nl")
+                            if shell("ssh core@" + name + ".a8.nl") == 0:
+                                break
                         except BaseException as ex:
                             console(ex)
-
                             if invoke_shell(name + ".a8.nl", "core", get_keypaths()) != 0:
                                 print("connection lost, trying in 1 seconds (ctrl-c to quit)")
                                 time.sleep(1)
                             else:
                                 break
+
                     except KeyboardInterrupt:
                         print("-connect_ssh:bye")
                         break
@@ -1089,9 +1087,10 @@ def connect_ssh(server):
             shell(cmd)
 
 
-def statuscluster():
+def statuscluster(commandline):
     """
-    statuscluster
+    @type commandline: VagrantArguments
+    @return: None
     """
     vmnames = get_vm_names()
 
@@ -1118,6 +1117,17 @@ def statuscluster():
 
                 if len(result.strip()) > 0:
                     info("statuscluster", " ".join([name, res.strip(), "up", result.lower().strip()]))
+                    kunits = []
+
+                    for line in remote_cmd(name + '.a8.nl', "systemctl list-units", "core", keypath=get_keypaths()).split("\n"):
+                        if "kube" in line:
+                            kunits.append(line)
+
+                    with Info(commandline.command, "system kube units") as groupinfo:
+                        for line in kunits:
+                            servicesplit = line.split(".service")
+                            service = [x.strip() for x in servicesplit]
+                            groupinfo.add(service[0], "".join(service[1:]))
                 else:
                     info("statuscluster", name + " down")
             except subprocess.CalledProcessError as cpex:

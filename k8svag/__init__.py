@@ -40,7 +40,7 @@ import concurrent.futures
 from os import path
 from cmdssh import run_cmd, remote_cmd, remote_cmd_map, run_scp, shell, CallCommandException
 from consoleprinter import console, query_yes_no, console_warning, console_exception, console_error_exit, info, doinput, warning, Info
-from arguments import Schema, Use, BaseArguments, abspath, abort, unzip, download, delete_directory
+from arguments import Schema, Use, BaseArguments, abspath, abort, download, delete_directory
 readline.parse_and_bind('tab: complete')
 
 
@@ -504,6 +504,36 @@ def ensure_project_folder(commandline, name, deletefiles):
         raise SystemExit()
 
 
+
+def unzip(source_filename):
+    """
+    @type source_filename: str
+    @return: None
+    """
+    dest_dir = os.getcwd()
+    zippath = os.path.join(dest_dir, source_filename)
+
+    if not os.path.exists(zippath):
+        console("zipfile doesn't exist", zippath, color="red")
+        raise FileNotFoundError(zippath)
+
+    with zipfile.ZipFile(zippath) as zf:
+        zf.extractall(dest_dir)
+
+    extracted_dir = os.path.join(os.path.join(os.getcwd(), dest_dir), "k8svag-createproject-master")
+
+    if os.path.exists(extracted_dir):
+        for mdir in os.listdir(extracted_dir):
+            shutil.move(os.path.join(extracted_dir, mdir), dest_dir)
+
+        os.rmdir(extracted_dir)
+
+        # os.remove(os.path.join(os.getcwd(), os.path.join(dest_dir, "master.zip")))
+    else:
+        console_warning(extracted_dir + " not created")
+        raise FileExistsError(extracted_dir + " not created")
+
+
 def download_and_unzip_k8svagrant_project(commandline):
     """
     @type commandline: VagrantArguments
@@ -511,7 +541,7 @@ def download_and_unzip_k8svagrant_project(commandline):
     """
     info(commandline.command, "downloading latest version of k8s/coreos for vagrant")
     zippath = os.path.join("master.zip")
-
+    os.system("cp ~/workspace/master.zip "+os.getcwd())
     if not os.path.exists(zippath):
         for cnt in range(1, 4):
             try:

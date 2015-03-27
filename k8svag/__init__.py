@@ -1087,6 +1087,18 @@ def connect_ssh(server):
             shell(cmd)
 
 
+def print_ctl_cmd(commandline, name, systemcmd, shouldhaveword):
+    kunits = []
+    for line in remote_cmd(name + '.a8.nl', systemcmd, "core", keypath=get_keypaths()).split("\n"):
+        if shouldhaveword in line:
+            kunits.append(line)
+    with Info(systemcmd) as groupinfo:
+        for line in kunits:
+            servicesplit = line.split(".service")
+            service = [x.strip() for x in servicesplit]
+            groupinfo.add(service[0], "".join(service[1:]))
+
+
 def statuscluster(commandline):
     """
     @type commandline: VagrantArguments
@@ -1117,19 +1129,13 @@ def statuscluster(commandline):
 
                 if len(result.strip()) > 0:
                     info("statuscluster", " ".join([name, res.strip(), "up", result.lower().strip()]))
-                    kunits = []
 
-                    for line in remote_cmd(name + '.a8.nl', "systemctl list-units", "core", keypath=get_keypaths()).split("\n"):
-                        if "kube" in line:
-                            kunits.append(line)
 
-                    with Info(commandline.command, "system kube units") as groupinfo:
-                        for line in kunits:
-                            servicesplit = line.split(".service")
-                            service = [x.strip() for x in servicesplit]
-                            groupinfo.add(service[0], "".join(service[1:]))
+                    print_ctl_cmd(commandline, name, "systemctl list-units", "kube")
+                    #print_ctl_cmd(commandline, name, "")
                 else:
                     info("statuscluster", name + " down")
+                print()
             except subprocess.CalledProcessError as cpex:
                 console_exception(cpex)
     else:

@@ -38,7 +38,7 @@ from tempfile import NamedTemporaryFile
 
 import concurrent.futures
 from os import path
-from cmdssh import run_cmd, remote_cmd, remote_cmd_map, run_scp, shell, CallCommandException
+from cmdssh import run_cmd, remote_cmd, remote_cmd_map, run_scp, shell, CallCommandException, invoke_shell
 from consoleprinter import console, query_yes_no, console_warning, console_exception, console_error_exit, info, doinput, warning, Info
 from arguments import Schema, Use, BaseArguments, abspath, abort, download, delete_directory
 readline.parse_and_bind('tab: complete')
@@ -319,7 +319,7 @@ def driver_vagrant(commandline):
 
     if commandline.command == "createproject":
         if project_found:
-            abort(commandline.command, "project file exist, refusing overwrite")
+            abort(commandline.command, "project file exist [" + str(name) + "], refusing overwrite")
         try:
             createproject(commandline)
             run_cmd("vagrant halt")
@@ -406,8 +406,6 @@ def driver_vagrant(commandline):
     else:
         abort(commandline.command, "not implemented")
         console(commandline)
-
-    info(commandline.command, "done")
 
 
 def configure_generic_cluster_files_for_this_machine(commandline, gui, numinstance, memory, numcpu):
@@ -504,7 +502,6 @@ def ensure_project_folder(commandline, name, deletefiles):
         raise SystemExit()
 
 
-
 def unzip(source_filename):
     """
     @type source_filename: str
@@ -541,7 +538,7 @@ def download_and_unzip_k8svagrant_project(commandline):
     """
     info(commandline.command, "downloading latest version of k8s/coreos for vagrant")
     zippath = os.path.join("master.zip")
-    os.system("cp ~/workspace/master.zip "+os.getcwd())
+
     if not os.path.exists(zippath):
         for cnt in range(1, 4):
             try:
@@ -621,10 +618,10 @@ def set_gateway_and_coreostoken(commandline):
     else:
         to_file("config/tokenlinux.txt", str(newtoken))
 
-    for cnt in range(1, 5):
+    for cnt in range(1, 15):
         try:
             if cnt > 2:
-                info(commandline.command, str(ex) + " attempt " + str(cnt))
+                info(commandline.command, "attempt " + str(cnt))
 
             if osx:
                 run_cmd("sudo vmnet-cli --stop")
@@ -1041,6 +1038,7 @@ def connect_ssh(server):
     """
     cnt = 0
     vmnames = get_vm_names()
+    index = 1
 
     if server not in vmnames:
         try:
@@ -1048,17 +1046,15 @@ def connect_ssh(server):
         except ValueError:
             index = None
 
-    if server not in vmnames:
+    if server not in vmnames and index is not None:
         for name in vmnames:
             cnt += 1
 
-            if index is None:
-                print("\033[36mssh ->", name, "\033[0m")
-                cmd = "ssh core@" + name + ".a8.nl"
-
+            if index == cnt:
+                print("ssh ->", name)
                 while True:
                     try:
-                        if shell(cmd) != 0:
+                        if invoke_shell(name + ".a8.nl", "core", get_keypaths()) != 0:
                             print("connection lost, trying in 1 seconds (ctrl-c to quit)")
                             time.sleep(1)
                         else:
@@ -1069,24 +1065,6 @@ def connect_ssh(server):
 
                 if server != 'all':
                     break
-            else:
-                if index == cnt:
-                    print("ssh ->", name)
-                    cmd = "ssh core@" + name + ".a8.nl"
-
-                    while True:
-                        try:
-                            if shell(cmd) != 0:
-                                print("connection lost, trying in 1 seconds (ctrl-c to quit)")
-                                time.sleep(1)
-                            else:
-                                break
-                        except KeyboardInterrupt:
-                            print("-connect_ssh:bye")
-                            break
-
-                    if server != 'all':
-                        break
         else:
             info("ssh", "server " + server + " not found, options are:")
             answers = []
@@ -1149,9 +1127,9 @@ def print_sshcmd_remote_command_result(result, lastoutput=""):
     @return: None
     """
     if result != lastoutput:
-        console(result, color="darkgreen", plainprint=True)
+        console(result, color="darkyellow", plainprint=True)
     else:
-        console("same", color="darkgreen", plainprint=True)
+        console("same", color="darkyellow", plainprint=True)
 
     return result
 

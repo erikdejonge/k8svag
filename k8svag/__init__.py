@@ -131,7 +131,6 @@ def generate_keypair(cmdname, comment, privatekeypath):
     if os.path.exists(privatekeypath):
         os.remove(privatekeypath)
         os.remove(privatekeypath + ".pub")
-
     run_cmd("ssh-keygen -t rsa -C \"" + comment + "\" -b 4096 -f ./" + os.path.basename(privatekeypath) + " -N \"\"", cwd=os.path.dirname(privatekeypath))
 
 
@@ -141,6 +140,11 @@ def baseprovision(commandline, provider):
     @type provider: str
     @return: None
     """
+    try:
+        shell("ssh-add keys/insecure/vagrant")
+    except BaseException as ex:
+        console(ex)
+
     info(commandline.command, "make directories on server")
     bring_vms_up(provider)
     sshcmd_remote_command("sudo mkdir /root/pypy&&sudo ln -s /home/core/bin /root/pypy/bin;", commandline.parallel, keypath=get_keypaths())
@@ -176,7 +180,6 @@ def set_working_dir(commandline, projectname):
             abort(commandline.command, commandline.workingdir + " does not exist")
         else:
             abort(commandline.command, "no workingdir set")
-
     os.chdir(str(commandline.workingdir))
     return commandline
 
@@ -336,7 +339,6 @@ def driver_vagrant(commandline):
             except CallCommandException as cce:
                 trycnt += 1
                 print(cce)
-
         baseprovision(commandline, get_provider())
         return
     elif commandline.command == "up":
@@ -380,7 +382,6 @@ def driver_vagrant(commandline):
             abort(commandline.command, "server is None")
         elif playbook is None:
             abort(commandline.command, "playbook is None")
-
         provision_ansible(server, playbook, password)
     elif commandline.command == "baseprovision":
         provider = get_provider()
@@ -390,7 +391,6 @@ def driver_vagrant(commandline):
     elif commandline.command == "ssh":
         if len(commandline.args) != 1:
             abort(commandline.command, "No server given, [cbx vagrant ssh servername]")
-
         connect_ssh(str(commandline.args[0]))
     elif commandline.command == "sshcmd":
         cmd = None
@@ -522,7 +522,6 @@ def unzip(source_filename):
     if os.path.exists(extracted_dir):
         for mdir in os.listdir(extracted_dir):
             shutil.move(os.path.join(extracted_dir, mdir), dest_dir)
-
         os.rmdir(extracted_dir)
 
         # os.remove(os.path.join(os.getcwd(), os.path.join(dest_dir, "master.zip")))
@@ -636,7 +635,6 @@ def set_gateway_and_coreostoken(commandline):
             break
         except CallCommandException as ex:
             warning(commandline.command, str(ex) + " attempt " + str(cnt))
-
     run_cmd("rm -f ~/.ssh/known_hosts")
 
 
@@ -915,7 +913,6 @@ def prepare_config(func_extra_config=None):
 
     if not os.path.exists("/config/tokenosx.txt") or not os.path.exists("/config/tokenlinux.txt"):
         write_new_tokens(vmhostosx)
-
     cp("Vagrantfile.tpl.rb", "Vagrantfile")
 
     if vmhostosx is True:
@@ -974,7 +971,6 @@ def localize_config(commandline, vmhostosx):
             hosts.write(name + " ansible_ssh_host=" + hostip + " ansible_ssh_port=22\n")
         except socket.gaierror:
             hosts.write(name + " ansible_ssh_host=" + name + ".a8.nl ansible_ssh_port=22\n")
-
     hosts.write("\n[masters]\n")
 
     for name in vmnames:
@@ -998,7 +994,6 @@ def localize_config(commandline, vmhostosx):
             hosts.write(name + "\n")
 
         cnt += 1
-
     hosts.write("\n[all]\n")
 
     for name in vmnames:
@@ -1020,13 +1015,11 @@ def localize_config(commandline, vmhostosx):
 
     if not os.path.exists(ntl):
         console_error_exit("configscripts/node.tmpl.yml not found", print_stack=True)
-
     write_config_from_template(commandline, ntl, vmhostosx)
     ntl = os.path.join(cwd, "configscripts/master.tmpl.yml")
 
     if not os.path.exists(ntl):
         console_error_exit("configscripts/master.tmpl.yml not found", print_stack=True)
-
     write_config_from_template(commandline, ntl, vmhostosx)
     return True
 
@@ -1045,6 +1038,14 @@ def connect_ssh(server):
             index = int(server)
         except ValueError:
             index = None
+    try:
+        shell("ssh-add keys/secure/vagrantsecure")
+    except BaseException as ex:
+        console(ex)
+    try:
+        shell("ssh-add keys/insecure/vagrant")
+    except BaseException as ex:
+        console(ex)
 
     if server not in vmnames and index is not None:
         for name in vmnames:
@@ -1054,11 +1055,16 @@ def connect_ssh(server):
                 print("ssh ->", name)
                 while True:
                     try:
-                        if invoke_shell(name + ".a8.nl", "core", get_keypaths()) != 0:
-                            print("connection lost, trying in 1 seconds (ctrl-c to quit)")
-                            time.sleep(1)
-                        else:
-                            break
+                        try:
+                            shell("ssh core@"+ name + ".a8.nl")
+                        except BaseException as ex:
+                            console(ex)
+
+                            if invoke_shell(name + ".a8.nl", "core", get_keypaths()) != 0:
+                                print("connection lost, trying in 1 seconds (ctrl-c to quit)")
+                                time.sleep(1)
+                            else:
+                                break
                     except KeyboardInterrupt:
                         print("-connect_ssh:bye")
                         break
@@ -1355,7 +1361,6 @@ def reset(wait):
                         iquit = eval(input("\n\n---\npress enter to continue (q=quit): "))
                         if iquit.strip() == "q":
                             break
-
                         run_cmd("clear")
                     except KeyboardInterrupt:
                         print("-reset:bye")

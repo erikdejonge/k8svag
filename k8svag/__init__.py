@@ -1153,7 +1153,7 @@ def print_sshcmd_remote_command_result(result, lastoutput=""):
     else:
         console("same", color="darkyellow", plainprint=True)
 
-    return result
+    return result 
 
 
 def sshcmd_remote_command(command, parallel, wait=False, server=None, timeout=60, keypath=None):

@@ -15,7 +15,7 @@ k8svag status
 ##Output
 ```bash
 Active8 => CoreOS Vagrant Kubernetes Cluster
-status: project 'kubetest1' found in '/Users/rabshakeh/workspace/test/kubetest1'
+status: project 'kubetest1' found in '.../test/kubetest1'
 statuscluster: core1 up version_id=633.1.0
 ==
 systemctl list-units k8svag/init:1118 
@@ -46,10 +46,9 @@ systemctl list-units k8svag/init:1118
 kube-kubelet : loaded active running   Kubernetes Kubelet 
 kube-proxy   : loaded active running   Kubernetes Proxy 
 
+```
 
-``
-
-###usage
+##Options
 ```bash
 Vagrant cluster management
 

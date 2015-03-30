@@ -5,7 +5,7 @@ Kubernetes Vagrant Provisioning and management script
 ```
 pip install k8svag
 
-k8svag createproject myproject
+k8svag createcluster myproject
 
 k8svag up myproject
 
@@ -65,9 +65,9 @@ Options:
 
 Commands:
     ansible        Provision cluster with ansible-playbook(s) [(<labelservers>:<nameplaybook>) ..]
-    baseprovision  Apply configuration, createproject calls this.
+    baseprovision  Apply configuration, createcluster calls this.
     coreostoken    Print coreos token to stdout
-    createproject  Create a Coreos Kubernetes cluster in local directory
+    createcluster  Create a Coreos Kubernetes cluster in local directory
     destroy        Destroy vagrant cluster (vagrant destroy -f)
     halt           Halt vagrant cluster (vagrant halt)
     reload         Reload cluster (vagrant reload)

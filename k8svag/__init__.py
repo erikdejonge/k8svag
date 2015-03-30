@@ -38,9 +38,9 @@ from tempfile import NamedTemporaryFile
 
 import concurrent.futures
 from os import path
-from cmdssh import run_cmd, remote_cmd, remote_cmd_map, run_scp, shell, CallCommandException, invoke_shell
+from cmdssh import run_cmd, remote_cmd, remote_cmd_map, run_scp, download, shell, CallCommandException, invoke_shell
 from consoleprinter import console, query_yes_no, console_warning, console_exception, console_error_exit, info, doinput, warning, Info
-from arguments import Schema, Use, BaseArguments, abspath, abort, download, delete_directory
+from arguments import Schema, Use, BaseArguments, abspath, abort, delete_directory
 readline.parse_and_bind('tab: complete')
 
 
@@ -61,7 +61,7 @@ class VagrantArguments(BaseArguments):
         self.replacecloudconfig = None
         self.commandline = None
         self.command = ""
-        self.createproject = None
+        self.createcluster = None
         self.parallel = False
         self.wait = 0
         self.projectname = ""
@@ -81,8 +81,8 @@ class VagrantArguments(BaseArguments):
 
             Commands:
                 ansible        Provision cluster with ansible-playbook(s) [(<labelservers>:<nameplaybook>) ..]
-                baseprovision  Apply configuration, createproject calls this.
-                createproject  Create a Coreos Kubernetes cluster in local directory
+                baseprovision  Apply configuration, createcluster calls this.
+                createcluster  Create a Coreos Kubernetes cluster in local directory
                 destroy        Destroy vagrant cluster (vagrant destroy -f)
                 halt           Halt vagrant cluster (vagrant halt)
                 reset          Reset cloudconfig settings and replace on cluster, reboots cluster
@@ -91,7 +91,7 @@ class VagrantArguments(BaseArguments):
                 status         Status of cluster or machine
                 up             Bring cluster up
         """
-        self.validcommands = ['ansible', 'baseprovision', 'coreostoken', 'createproject', 'destroy', 'halt', 'reload', 'reset', 'ssh', 'sshcmd', 'status', 'up']
+        self.validcommands = ['ansible', 'baseprovision', 'coreostoken', 'createcluster', 'destroy', 'halt', 'reload', 'reset', 'ssh', 'sshcmd', 'status', 'up']
         validateschema = Schema({'command': Use(self.validcommand)})
         self.set_command_help("up", "Start all vm's in the cluster")
         self.set_command_help("status", "ssh-config data combined with other data")
@@ -273,7 +273,7 @@ def input_vagrant_parameters(commandline, numcpus=4, gui=True, instances=4, memo
     return gui, instances, memory, numcpus, name, deleteoldfiles
 
 
-def createproject(commandline):
+def createcluster(commandline):
     """
     @type commandline: VagrantArguments
     @return: None
@@ -311,17 +311,17 @@ def driver_vagrant(commandline):
         raise AssertionError("no command set")
 
     project_found, name = get_working_directory(commandline)
-    if not project_found and commandline.command != "createproject":
-        abort(commandline.command, "A k8svag environment is required.Run 'k8svag createproject' or \nchange to a directory with a 'Vagrantfile' and '.cl' folder in it.")
+    if not project_found and commandline.command != "createcluster":
+        abort(commandline.command, "A k8svag environment is required.Run 'k8svag createcluster' or \nchange to a directory with a 'Vagrantfile' and '.cl' folder in it.")
     else:
-        if commandline.command not in ["createproject"]:
+        if commandline.command not in ["createcluster"]:
             info(commandline.command, "project '" + name + "' found in '" + os.getcwd() + "'")
 
-    if commandline.command == "createproject":
+    if commandline.command == "createcluster":
         if project_found:
             abort(commandline.command, "project file exist [" + str(name) + "], refusing overwrite")
         try:
-            createproject(commandline)
+            createcluster(commandline)
             run_cmd("vagrant halt")
         except BaseException as be:
             shutil.rmtree(str(commandline.workingdir))
@@ -459,7 +459,7 @@ def configure_generic_cluster_files_for_this_machine(commandline, gui, numinstan
 
     vmhost, provider = prepare_config(func_extra_config)
     info(commandline.command, provider)
-    if commandline.command in ["createproject", "baseprovision", "reset", "reload", "command"]:
+    if commandline.command in ["createcluster", "baseprovision", "reset", "reload", "command"]:
         vfp = open(vagrantfile)
         vf = vfp.read()
         vfp.close()
@@ -532,6 +532,7 @@ def unzip(source_filename):
         # os.remove(os.path.join(os.getcwd(), os.path.join(dest_dir, "master.zip")))
     else:
         console_warning(extracted_dir + " not created")
+
         raise FileExistsError(extracted_dir + " not created")
 
 
@@ -541,12 +542,17 @@ def download_and_unzip_k8svagrant_project(commandline):
     @return: None
     """
     info(commandline.command, "downloading latest version of k8s/coreos for vagrant")
-    zippath = os.path.join("master.zip")
+    zippath = os.path.join(os.getcwd(), "master.zip")
+    zippathroot = os.path.join(os.path.dirname(os.getcwd()), "master.zip")
+
+    if os.path.exists(zippathroot):
+        info(commandline.command, "copy " + zippathroot + " -> " + zippath)
+        shutil.copyfile(zippathroot, zippath)
 
     if not os.path.exists(zippath):
         for cnt in range(1, 4):
             try:
-                download("https://github.com/erikdejonge/k8svag-createproject/archive/master.zip", zippath)
+                download("https://github.com/erikdejonge/k8svag-createcluster/archive/master.zip", zippath)
                 unzip("master.zip")
                 break
             except zipfile.BadZipFile as zex:
@@ -555,9 +561,10 @@ def download_and_unzip_k8svagrant_project(commandline):
     else:
         try:
             unzip("master.zip")
-        except zipfile.BadZipFile:
+        except zipfile.BadZipFile as bze:
+            console_exception(bze)
             try:
-                download("https://github.com/erikdejonge/k8svag-createproject/archive/master.zip", zippath)
+                download("https://github.com/erikdejonge/k8svag-createcluster/archive/master.zip", zippath)
                 unzip("master.zip")
             except zipfile.BadZipFile as zex:
                 console_exception(zex)
@@ -1099,12 +1106,13 @@ def connect_ssh(server):
 
 def print_ctl_cmd(commandline, name, systemcmd, shouldhaveword):
     """
-    @type commandline: Arguments
+    @type commandline: VagrantArguments
     @type name: str
     @type systemcmd: str
     @type shouldhaveword: str
     @return: None
     """
+    info(commandline.command, "print_ctl_cmd")
     kunits = []
 
     for line in remote_cmd(name + '.a8.nl', systemcmd, "core", keypath=get_keypaths()).split("\n"):

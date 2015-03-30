@@ -85,13 +85,14 @@ class VagrantArguments(BaseArguments):
                 createproject  Create a Coreos Kubernetes cluster in local directory
                 destroy        Destroy vagrant cluster (vagrant destroy -f)
                 halt           Halt vagrant cluster (vagrant halt)
+                kubectl        kubectl command
                 reset          Reset cloudconfig settings and replace on cluster, reboots cluster
                 ssh            Make ssh connection into specific machine
                 sshcmd         Execute command on cluster (remote command)
                 status         Status of cluster or machine
                 up             Bring cluster up
         """
-        self.validcommands = ['ansible', 'baseprovision', 'coreostoken', 'createproject', 'destroy', 'halt', 'reload', 'reset', 'ssh', 'sshcmd', 'status', 'up']
+        self.validcommands = ['ansible', 'baseprovision', 'coreostoken', 'createproject', 'destroy', 'halt', 'kubectl', 'reload', 'reset', 'ssh', 'sshcmd', 'status', 'up']
         validateschema = Schema({'command': Use(self.validcommand)})
         self.set_command_help("up", "Start all vm's in the cluster")
         self.set_command_help("status", "ssh-config data combined with other data")
@@ -345,6 +346,8 @@ def driver_vagrant(commandline):
         bring_vms_up(provider)
     elif commandline.command == "halt":
         run_cmd("vagrant halt")
+    elif commandline.command == "kubectl":
+        run_kubectl(commandline)
     elif commandline.command == "coreostoken":
         print_coreos_token_stdout()
     elif commandline.command == "destroy":

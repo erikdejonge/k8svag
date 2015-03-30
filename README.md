@@ -1,12 +1,52 @@
 # k8svag
 Kubernetes Vagrant Provisioning and management script
 
+##Usage
 ```
 pip install k8svag
 
 k8svag createproject myproject
 
 k8svag up myproject
+
+k8svag status
+```
+
+##Output
+```bash
+Active8 => CoreOS Vagrant Kubernetes Cluster
+status: project 'kubetest1' found in '/Users/rabshakeh/workspace/test/kubetest1'
+statuscluster: core1 up version_id=633.1.0
+==
+systemctl list-units k8svag/init:1118 
+==
+kube-apiserver          : loaded active running   Kubernetes API Server 
+kube-controller-manager : loaded active running   Kubernetes Controller Manager 
+kube-register           : loaded active running   Kubernetes Registration Service 
+kube-scheduler          : loaded active running   Kubernetes Scheduler 
+
+statuscluster: core2 up version_id=633.1.0
+==
+systemctl list-units k8svag/init:1118 
+==
+kube-kubelet : loaded active running   Kubernetes Kubelet 
+kube-proxy   : loaded active running   Kubernetes Proxy 
+
+statuscluster: core3 up version_id=633.1.0
+==
+systemctl list-units k8svag/init:1118 
+==
+kube-kubelet : loaded active running   Kubernetes Kubelet 
+kube-proxy   : loaded active running   Kubernetes Proxy 
+
+statuscluster: core4 up version_id=633.1.0
+==
+systemctl list-units k8svag/init:1118 
+==
+kube-kubelet : loaded active running   Kubernetes Kubelet 
+kube-proxy   : loaded active running   Kubernetes Proxy 
+
+
 ``
 
 ###usage

@@ -386,9 +386,17 @@ def driver_vagrant(commandline):
         password = doinput("testansible password", default="")
         provision_ansible("all", "./playbooks/testansible.yml", password)
     elif commandline.command == "ssh":
-        if len(commandline.args) != 1:
+        server = None
+        if commandline.projectname is not None and len(commandline.args) != 1:
+            server = "1"
+        elif len(commandline.args) > 1 or len(commandline.args) == 0:
             abort(commandline.command, "No server given, [cbx vagrant ssh servername]")
-        connect_ssh(str(commandline.args[0]))
+        else:
+            server = str(commandline.args[0])
+
+        if server is not None:
+            connect_ssh(server)
+
     elif commandline.command == "sshcmd":
         cmd = None
 
@@ -650,7 +658,9 @@ def get_working_directory(commandline):
         vagrantfile = os.path.join(os.path.join(os.path.dirname(os.getcwd()), str(tname)), "Vagrantfile")
 
         if os.path.exists(vagrantfile):
-            commandline.workingdir = os.getcwd()
+            retname = os.path.basename(os.path.dirname(vagrantfile))
+            commandline.projectname = retname
+            commandline.workingdir = os.path.dirname(vagrantfile)
         else:
             vagrantfile = os.path.join(os.path.join(os.getcwd(), str(tname)), "Vagrantfile")
 
@@ -1088,10 +1098,19 @@ def connect_ssh(server):
 
 
 def print_ctl_cmd(commandline, name, systemcmd, shouldhaveword):
+    """
+    @type commandline: Arguments
+    @type name: str
+    @type systemcmd: str
+    @type shouldhaveword: str
+    @return: None
+    """
     kunits = []
+
     for line in remote_cmd(name + '.a8.nl', systemcmd, "core", keypath=get_keypaths()).split("\n"):
         if shouldhaveword in line:
             kunits.append(line)
+
     with Info(systemcmd) as groupinfo:
         for line in kunits:
             servicesplit = line.split(".service")
@@ -1129,12 +1148,12 @@ def statuscluster(commandline):
 
                 if len(result.strip()) > 0:
                     info("statuscluster", " ".join([name, res.strip(), "up", result.lower().strip()]))
-
-
                     print_ctl_cmd(commandline, name, "systemctl list-units", "kube")
-                    #print_ctl_cmd(commandline, name, "")
+
+                    # print_ctl_cmd(commandline, name, "")
                 else:
                     info("statuscluster", name + " down")
+
                 print()
             except subprocess.CalledProcessError as cpex:
                 console_exception(cpex)
@@ -1153,7 +1172,7 @@ def print_sshcmd_remote_command_result(result, lastoutput=""):
     else:
         console("same", color="darkyellow", plainprint=True)
 
-    return result 
+    return result
 
 
 def sshcmd_remote_command(command, parallel, wait=False, server=None, timeout=60, keypath=None):
@@ -1166,6 +1185,8 @@ def sshcmd_remote_command(command, parallel, wait=False, server=None, timeout=60
     @type keypath: None, str
     @return: None
     """
+    console(command)
+
     if parallel is True:
         info(command, "execute parallel")
 

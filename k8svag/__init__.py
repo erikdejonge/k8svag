@@ -61,7 +61,7 @@ class VagrantArguments(BaseArguments):
         self.replacecloudconfig = None
         self.commandline = None
         self.command = ""
-        self.createcluster = None
+        self.createproject = None
         self.parallel = False
         self.wait = 0
         self.projectname = ""
@@ -81,8 +81,8 @@ class VagrantArguments(BaseArguments):
 
             Commands:
                 ansible        Provision cluster with ansible-playbook(s) [(<labelservers>:<nameplaybook>) ..]
-                baseprovision  Apply configuration, createcluster calls this.
-                createcluster  Create a Coreos Kubernetes cluster in local directory
+                baseprovision  Apply configuration, createproject calls this.
+                createproject  Create a Coreos Kubernetes cluster in local directory
                 destroy        Destroy vagrant cluster (vagrant destroy -f)
                 halt           Halt vagrant cluster (vagrant halt)
                 reset          Reset cloudconfig settings and replace on cluster, reboots cluster
@@ -91,7 +91,7 @@ class VagrantArguments(BaseArguments):
                 status         Status of cluster or machine
                 up             Bring cluster up
         """
-        self.validcommands = ['ansible', 'baseprovision', 'coreostoken', 'createcluster', 'destroy', 'halt', 'reload', 'reset', 'ssh', 'sshcmd', 'status', 'up']
+        self.validcommands = ['ansible', 'baseprovision', 'coreostoken', 'createproject', 'destroy', 'halt', 'reload', 'reset', 'ssh', 'sshcmd', 'status', 'up']
         validateschema = Schema({'command': Use(self.validcommand)})
         self.set_command_help("up", "Start all vm's in the cluster")
         self.set_command_help("status", "ssh-config data combined with other data")
@@ -273,7 +273,7 @@ def input_vagrant_parameters(commandline, numcpus=4, gui=True, instances=4, memo
     return gui, instances, memory, numcpus, name, deleteoldfiles
 
 
-def createcluster(commandline):
+def createproject(commandline):
     """
     @type commandline: VagrantArguments
     @return: None
@@ -311,21 +311,23 @@ def driver_vagrant(commandline):
         raise AssertionError("no command set")
 
     project_found, name = get_working_directory(commandline)
-    if not project_found and commandline.command != "createcluster":
-        abort(commandline.command, "A k8svag environment is required.Run 'k8svag createcluster' or \nchange to a directory with a 'Vagrantfile' and '.cl' folder in it.")
+    if not project_found and commandline.command != "createproject":
+        abort(commandline.command, "A k8svag environment is required.Run 'k8svag createproject' or \nchange to a directory with a 'Vagrantfile' and '.cl' folder in it.")
     else:
-        if commandline.command not in ["createcluster"]:
+        if commandline.command not in ["createproject"]:
             info(commandline.command, "project '" + name + "' found in '" + os.getcwd() + "'")
 
-    if commandline.command == "createcluster":
+    if commandline.command == "createproject":
         if project_found:
             abort(commandline.command, "project file exist [" + str(name) + "], refusing overwrite")
         try:
-            createcluster(commandline)
+            createproject(commandline)
             run_cmd("vagrant halt")
         except BaseException as be:
-            shutil.rmtree(str(commandline.workingdir))
+            if commandline.workingdir and os.path.exists(str(commandline.workingdir)):
+                shutil.rmtree(str(commandline.workingdir))
             warning(commandline.command, str(be))
+            raise
         trycnt = 0
         while trycnt < 5:
             try:
@@ -459,7 +461,7 @@ def configure_generic_cluster_files_for_this_machine(commandline, gui, numinstan
 
     vmhost, provider = prepare_config(func_extra_config)
     info(commandline.command, provider)
-    if commandline.command in ["createcluster", "baseprovision", "reset", "reload", "command"]:
+    if commandline.command in ["createproject", "baseprovision", "reset", "reload", "command"]:
         vfp = open(vagrantfile)
         vf = vfp.read()
         vfp.close()
@@ -552,7 +554,7 @@ def download_and_unzip_k8svagrant_project(commandline):
     if not os.path.exists(zippath):
         for cnt in range(1, 4):
             try:
-                download("https://github.com/erikdejonge/k8svag-createcluster/archive/master.zip", zippath)
+                download("https://github.com/erikdejonge/k8svag-createproject/archive/master.zip", zippath)
                 unzip("master.zip")
                 break
             except zipfile.BadZipFile as zex:
@@ -564,7 +566,7 @@ def download_and_unzip_k8svagrant_project(commandline):
         except zipfile.BadZipFile as bze:
             console_exception(bze)
             try:
-                download("https://github.com/erikdejonge/k8svag-createcluster/archive/master.zip", zippath)
+                download("https://github.com/erikdejonge/k8svag-createproject/archive/master.zip", zippath)
                 unzip("master.zip")
             except zipfile.BadZipFile as zex:
                 console_exception(zex)

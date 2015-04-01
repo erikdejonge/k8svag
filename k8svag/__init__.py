@@ -34,8 +34,6 @@ import netifaces
 import readline
 from tempfile import NamedTemporaryFile
 
-# from multiprocessing import Pool, cpu_count
-
 import concurrent.futures
 from os import path
 from cmdssh import run_cmd, remote_cmd, remote_cmd_map, run_scp, download, shell, CallCommandException, invoke_shell
@@ -311,13 +309,39 @@ def connect_ssh(server):
             shell(cmd)
 
 
+class ZA(object):
+
+    def __init__(self):
+        """
+        __init__
+        """
+        self.foo = 3
+        self.aa = 2
+        self.zz = 5
+        super(ZA).__init__()
+
+
 def cp(fpathin, fpathout):
     """
     @type fpathin: str
     @type fpathout: str
+    @type xx: int
+    @type ff: bool
     @return: None
     """
     shutil.copyfile(fpathin, fpathout)
+
+
+class Abb(object):
+
+    def __init__(self):
+        """
+        __init__
+        """
+        self.foo = 3
+        self.aa = 2
+        self.zz = 5
+        super(A).__init__()
 
 
 def createproject(commandline):

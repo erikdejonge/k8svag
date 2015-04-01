@@ -31,13 +31,8 @@ from consoleprinter import Info, console, console_error_exit, console_exception,
 
 
 standard_library.install_aliases()
-
-
 standard_library.install_aliases()
-
 DEBUGMODE = False
-
-
 readline.parse_and_bind('tab: complete')
 
 
@@ -1452,9 +1447,6 @@ def write_new_tokens(vmhostosx):
     else:
         tlin = tokenpath("linux")
         open(tlin, "w").write(token)
-
-
-# noinspection PyUnusedLocal
 
 
 if __name__ == "__main__":

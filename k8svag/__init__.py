@@ -4,10 +4,7 @@
 Cluster management tool for setting up a coreos-vagrant cluster
 25-02-15: parallel execution of ssh using paramiko
 """
-
-
 from __future__ import absolute_import, division, print_function, unicode_literals
-
 from future import standard_library
 
 import netifaces
@@ -22,17 +19,19 @@ import time
 import vagrant
 import zipfile
 import concurrent.futures
-
 from os import path
 from cmdssh import CallCommandException, download, invoke_shell, remote_cmd, remote_cmd_map, run_cmd, run_scp, shell
 from tempfile import NamedTemporaryFile
 from arguments import BaseArguments, Schema, Use, abort, abspath, delete_directory
 from consoleprinter import Info, console, console_error_exit, console_exception, console_warning, doinput, info, query_yes_no, warning
+standard_library.install_aliases()
 
 
 standard_library.install_aliases()
-standard_library.install_aliases()
+
 DEBUGMODE = False
+
+
 readline.parse_and_bind('tab: complete')
 
 
@@ -108,6 +107,13 @@ class VagrantArguments(BaseArguments):
             raise AssertionError("workingdir was already set", self.workingdir)
         else:
             self.__workingdir = v
+
+
+def apple():
+    """
+    apple
+    """
+    pass
 
 
 def baseprovision(commandline, provider):

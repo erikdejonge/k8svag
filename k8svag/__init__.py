@@ -109,13 +109,6 @@ class VagrantArguments(BaseArguments):
             self.__workingdir = v
 
 
-def apple():
-    """
-    apple
-    """
-    pass
-
-
 def baseprovision(commandline, provider):
     """
     @type commandline: VagrantArguments

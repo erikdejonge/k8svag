@@ -4,41 +4,40 @@
 Cluster management tool for setting up a coreos-vagrant cluster
 25-02-15: parallel execution of ssh using paramiko
 """
-from __future__ import print_function
-from __future__ import division
-from __future__ import unicode_literals
-from __future__ import absolute_import
-from builtins import super
-from builtins import range
-from builtins import open
-from builtins import str
-from builtins import input
-from builtins import int
+
+
+from __future__ import absolute_import, division, print_function, unicode_literals
+
 from future import standard_library
+
+import netifaces
+import os
+import pickle
+import re
+import readline
+import shutil
+import socket
+import subprocess
+import time
+import vagrant
+import zipfile
+import concurrent.futures
+
+from os import path
+from cmdssh import CallCommandException, download, invoke_shell, remote_cmd, remote_cmd_map, run_cmd, run_scp, shell
+from tempfile import NamedTemporaryFile
+from arguments import BaseArguments, Schema, Use, abort, abspath, delete_directory
+from consoleprinter import Info, console, console_error_exit, console_exception, console_warning, doinput, info, query_yes_no, warning
+
+
 standard_library.install_aliases()
-from future import standard_library
+
+
 standard_library.install_aliases()
 
 DEBUGMODE = False
 
-import vagrant
-import os
-import re
-import time
-import pickle
-import subprocess
-import socket
-import zipfile
-import shutil
-import netifaces
-import readline
-from tempfile import NamedTemporaryFile
 
-import concurrent.futures
-from os import path
-from cmdssh import run_cmd, remote_cmd, remote_cmd_map, run_scp, download, shell, CallCommandException, invoke_shell
-from consoleprinter import console, query_yes_no, console_warning, console_exception, console_error_exit, info, doinput, warning, Info
-from arguments import Schema, Use, BaseArguments, abspath, abort, delete_directory
 readline.parse_and_bind('tab: complete')
 
 
@@ -179,7 +178,7 @@ def configure_generic_cluster_files_for_this_machine(commandline, gui, numinstan
     @type commandline: VagrantArguments
     @type gui: int
     @type numinstance: int
-    @type memory: str
+    @type memory: int
     @type numcpu: int
     @return: None
     """
@@ -309,39 +308,13 @@ def connect_ssh(server):
             shell(cmd)
 
 
-class ZA(object):
-
-    def __init__(self):
-        """
-        __init__
-        """
-        self.foo = 3
-        self.aa = 2
-        self.zz = 5
-        super(ZA).__init__()
-
-
 def cp(fpathin, fpathout):
     """
     @type fpathin: str
     @type fpathout: str
-    @type xx: int
-    @type ff: bool
     @return: None
     """
     shutil.copyfile(fpathin, fpathout)
-
-
-class Abb(object):
-
-    def __init__(self):
-        """
-        __init__
-        """
-        self.foo = 3
-        self.aa = 2
-        self.zz = 5
-        super(A).__init__()
 
 
 def createproject(commandline):
@@ -474,6 +447,7 @@ def driver_vagrant(commandline):
     elif commandline.command == "halt":
         run_cmd("vagrant halt")
     elif commandline.command == "kubectl":
+        # noinspection PyTypeChecker
         run_kubectl(commandline)
     elif commandline.command == "coreostoken":
         print_coreos_token_stdout()
@@ -1161,6 +1135,15 @@ def run_commandline(parent=None):
     driver_vagrant(commandline)
 
 
+# noinspection PyUnusedLocal
+def run_kubectl(commandline):
+    """
+    @type commandline: Arguments
+    @return: None
+    """
+    pass
+
+
 def sed(oldstr, newstr, infile):
     """
     @type oldstr: str
@@ -1469,6 +1452,9 @@ def write_new_tokens(vmhostosx):
     else:
         tlin = tokenpath("linux")
         open(tlin, "w").write(token)
+
+
+# noinspection PyUnusedLocal
 
 
 if __name__ == "__main__":

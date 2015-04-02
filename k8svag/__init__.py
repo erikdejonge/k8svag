@@ -2,7 +2,6 @@
 # coding=utf-8
 """
 Cluster management tool for setting up a coreos-vagrant cluster
-25-02-15: parallel execution of ssh using paramiko
 """
 from __future__ import absolute_import, division, print_function, unicode_literals
 
@@ -22,12 +21,6 @@ from cmdssh import CallCommandException, cmd_run, download, invoke_shell, remote
 from tempfile import NamedTemporaryFile
 from arguments import BaseArguments, Schema, Use, abort, abspath, delete_directory
 from consoleprinter import Info, console, console_error_exit, console_exception, console_warning, doinput, info, query_yes_no, warning
-
-# noinspection PyUnusedLocal
-# noinspection PyUnusedLocal
-# noinspection PyUnusedLocal
-# noinspection PyUnusedLocal
-# noinspection PyUnusedLocal
 
 
 class VagrantArguments(BaseArguments):
@@ -83,9 +76,8 @@ class VagrantArguments(BaseArguments):
         self.set_command_help("up", "Start all vm's in the cluster")
         self.set_command_help("status", "ssh-config data combined with other data")
         self.set_command_help("ansible", "example: cbx ansible myproject all:myplaybook.yml core1:anotherplaybook.yml")
-
-
         self.set_command_help("kubectl", "commands for the kubectl binary")
+
         super(VagrantArguments, self).__init__(doc, validateschema, parent=parent)
 
     @property
@@ -287,7 +279,6 @@ def cmd_destroy_vagrant_cluster():
     destroy_vagrant_cluster
     """
     cwd = os.getcwd()
-
     try:
         cmd = "vagrant destroy -f"
         cmd_run(cmd)
@@ -412,7 +403,6 @@ def cmd_driver_vagrant(commandline):
 def cmd_kubectl(commandline):
     """
     @type commandline: VagrantArguments
-    @type cmd: str
     @return: None
     """
 
@@ -910,7 +900,7 @@ def get_vm_names(retry=False):
         vmnames = []
         numinstances = None
 
-        # noinspection PyBroadException #
+        # noinspection PyBroadException
         try:
             numinstances = get_num_instances()
             osx = is_osx()

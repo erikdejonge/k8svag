@@ -71,7 +71,7 @@ class VagrantArguments(BaseArguments):
                 createproject  Create a Coreos Kubernetes cluster in local directory
                 destroy        Destroy vagrant cluster (vagrant destroy -f)
                 halt           Halt vagrant cluster (vagrant halt)
-                kubectl        kubectl command
+                kubectl        kubectl command [kubectl [<args>...]]
                 reset          Reset cloudconfig settings and replace on cluster, reboots cluster
                 ssh            Make ssh connection into specific machine
                 sshcmd         Execute command on cluster (remote command)
@@ -84,6 +84,8 @@ class VagrantArguments(BaseArguments):
         self.set_command_help("status", "ssh-config data combined with other data")
         self.set_command_help("ansible", "example: cbx ansible myproject all:myplaybook.yml core1:anotherplaybook.yml")
 
+
+        self.set_command_help("kubectl", "kubectl ")
         super(VagrantArguments, self).__init__(doc, validateschema, parent=parent)
 
     @property
@@ -407,14 +409,14 @@ def cmd_driver_vagrant(commandline):
         console(commandline)
 
 
-
-def cmd_kubectl(commandline, cmd):
+def cmd_kubectl(commandline):
     """
     @type commandline: VagrantArguments
     @type cmd: str
     @return: None
     """
-    info(commandline.command, cmd)
+
+    info(commandline.command, "?")
 
 
 def cmd_print_coreos_token_stdout():

@@ -85,7 +85,7 @@ class VagrantArguments(BaseArguments):
         self.set_command_help("ansible", "example: cbx ansible myproject all:myplaybook.yml core1:anotherplaybook.yml")
 
 
-        self.set_command_help("kubectl", "kubectl ")
+        self.set_command_help("kubectl", "commands for the kubectl binary")
         super(VagrantArguments, self).__init__(doc, validateschema, parent=parent)
 
     @property

@@ -407,13 +407,14 @@ def cmd_driver_vagrant(commandline):
         console(commandline)
 
 
-# noinspection PyUnusedLocal
-def cmd_kubectl(commandline):
+
+def cmd_kubectl(commandline, cmd):
     """
     @type commandline: VagrantArguments
+    @type cmd: str
     @return: None
     """
-    pass
+    info(commandline.command, cmd)
 
 
 def cmd_print_coreos_token_stdout():

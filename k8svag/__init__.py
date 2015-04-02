@@ -4,7 +4,6 @@
 Cluster management tool for setting up a coreos-vagrant cluster
 25-02-15: parallel execution of ssh using paramiko
 """
-
 from __future__ import absolute_import, division, print_function, unicode_literals
 
 import netifaces
@@ -18,21 +17,19 @@ import time
 import vagrant
 import zipfile
 import concurrent.futures
-
 from os import path
 from cmdssh import CallCommandException, cmd_run, download, invoke_shell, remote_cmd, remote_cmd_map, scp_run, shell
 from tempfile import NamedTemporaryFile
 from arguments import BaseArguments, Schema, Use, abort, abspath, delete_directory
 from consoleprinter import Info, console, console_error_exit, console_exception, console_warning, doinput, info, query_yes_no, warning
 
-
+# noinspection PyUnusedLocal
+# noinspection PyUnusedLocal
+# noinspection PyUnusedLocal
+# noinspection PyUnusedLocal
 # noinspection PyUnusedLocal
 
 
-# noinspection PyUnusedLocal
-
-
-# noinspection PyUnusedLocal
 class VagrantArguments(BaseArguments):
     """
     MainArguments
@@ -288,6 +285,7 @@ def cmd_destroy_vagrant_cluster():
     destroy_vagrant_cluster
     """
     cwd = os.getcwd()
+
     try:
         cmd = "vagrant destroy -f"
         cmd_run(cmd)
@@ -308,7 +306,6 @@ def cmd_driver_vagrant(commandline):
     @type commandline: VagrantArguments
     @return: None
     """
-
     if hasattr(commandline, "help") and commandline.help is True:
         return
 
@@ -423,7 +420,6 @@ def cmd_print_coreos_token_stdout():
     """
     print_coreos_token_stdout
     """
-
     print("\033[36m" + str(get_token()) + "\033[0m")
 
 
@@ -1242,6 +1238,7 @@ def print_ctl_cmd(commandline, name, systemcmd, shouldhaveword):
     @type shouldhaveword: str
     @return: None
     """
+
     info(commandline.command, "print_ctl_cmd")
     kunits = []
 
@@ -1472,6 +1469,6 @@ def write_new_tokens(vmhostosx):
         tlin = tokenpath("linux")
         open(tlin, "w").write(token)
 
-# noinspection PyUnusedLocal
-# noinspection PyUnusedLocal
-# noinspection PyUnusedLocal
+
+if __name__ == "__main__":
+    main()

@@ -8,6 +8,7 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 import netifaces
 import os
 import pickle
+import platform
 import re
 import shutil
 import socket
@@ -279,6 +280,7 @@ def cmd_destroy_vagrant_cluster():
     destroy_vagrant_cluster
     """
     cwd = os.getcwd()
+
     try:
         cmd = "vagrant destroy -f"
         cmd_run(cmd)
@@ -405,8 +407,23 @@ def cmd_kubectl(commandline):
     @type commandline: VagrantArguments
     @return: None
     """
+    machine = platform.machine()
 
-    info(commandline.command, "?")
+    if "64" in str(machine):
+        machine = "amd64"
+    else:
+        machine = "386"
+
+    system = platform.system()
+    kubectl = os.path.join(os.getcwd(), "platforms")
+    kubectl = os.path.join(kubectl, system.lower())
+    kubectl = os.path.join(kubectl, machine)
+    kubectl = os.path.join(kubectl, "kubectl")
+
+    if not os.path.exists(kubectl):
+        abort(commandline.command, "kubectl not found: " + str(kubectl))
+
+    info(commandline.command, kubectl)
 
 
 def cmd_print_coreos_token_stdout():

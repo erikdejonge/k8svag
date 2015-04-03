@@ -18,7 +18,7 @@ import vagrant
 import zipfile
 import concurrent.futures
 from os import path
-from cmdssh import CallCommandException, cmd_run, download, invoke_shell, remote_cmd, remote_cmd_map, scp_run, shell
+from cmdssh import CallCommandException, cmd_run, download, invoke_shell, remote_cmd, remote_cmd_map, scp_run, shell, cmd_exec
 from tempfile import NamedTemporaryFile
 from arguments import BaseArguments, Schema, Use, abort, abspath, delete_directory
 from consoleprinter import Info, console, console_error_exit, console_exception, console_warning, doinput, info, query_yes_no, warning
@@ -84,20 +84,23 @@ class VagrantArguments(BaseArguments):
     @property
     def workingdir(self):
         """
-        workingdir
+        @return: str
         """
-        return self.__workingdir
+        if self.__workingdir is None:
+            return None
+
+        return str(self.__workingdir)
 
     @workingdir.setter
     def workingdir(self, v):
         """
         @type v: str
-        @return: None
         """
         if self.workingdir is not None:
             raise AssertionError("workingdir was already set", self.workingdir)
         else:
-            self.__workingdir = v
+            if v is not None:
+                self.__workingdir = os.path.abspath(v)
 
 
 def bool_to_text(inputbool):
@@ -415,7 +418,7 @@ def cmd_kubectl(commandline):
         machine = "386"
 
     system = platform.system()
-    kubectl = os.path.join(os.getcwd(), "platforms")
+    kubectl = os.path.join(commandline.workingdir, "platforms")
     kubectl = os.path.join(kubectl, system.lower())
     kubectl = os.path.join(kubectl, machine)
     kubectl = os.path.join(kubectl, "kubectl")
@@ -423,7 +426,25 @@ def cmd_kubectl(commandline):
     if not os.path.exists(kubectl):
         abort(commandline.command, "kubectl not found: " + str(kubectl))
 
-    info(commandline.command, kubectl)
+    params = " ".join(commandline.args)
+
+    if len(params) > 0:
+        kubectl += " "
+        kubectl += params
+
+    def filterkubectllog(s):
+        """
+        @type s: str
+        @return: None
+        """
+        sp = s.split("]")
+
+        if len(sp) > 0:
+            return "]".join(sp[1:])
+        else:
+            return s
+
+    cmd_exec(kubectl, cmdtoprint="kubectl " + params, filter=filterkubectllog)
 
 
 def cmd_print_coreos_token_stdout():
@@ -487,8 +508,6 @@ def cmd_remote_command(command, parallel, wait=False, server=None, timeout=60, k
     @type keypath: None, str
     @return: None
     """
-    console(command)
-
     if parallel is True:
         info(command, "execute parallel")
 
@@ -637,12 +656,10 @@ def cmd_statuscluster(commandline):
                 result = remote_cmd(name + '.a8.nl', 'cat /etc/os-release|grep VERSION_ID', username="core", keypath=get_keypaths())
 
                 if len(result.strip()) > 0:
-                    info("statuscluster", " ".join([name, res.strip(), "up", result.lower().strip()]))
-                    print_ctl_cmd(commandline, name, "systemctl list-units", "kube")
-
-                    # print_ctl_cmd(commandline, name, "")
+                    info(commandline.command, " ".join([name, res.strip(), "up", result.lower().strip()]))
+                    print_ctl_cmd(name, "systemctl list-units", "kube")
                 else:
-                    info("statuscluster", name + " down")
+                    info(commandline.command, name + " down")
 
                 print()
             except subprocess.CalledProcessError as cpex:
@@ -982,11 +999,14 @@ def get_working_directory(commandline):
 
                 if os.path.exists(vagrantfile):
                     if len(commandline.m_argv) > 0:
-                        commandline.args.append(commandline.m_argv[-1:][0])
+                        commandline.args.insert(0, tname)
 
                     retname = os.path.basename(os.path.dirname(vagrantfile))
                     commandline.projectname = retname
                     commandline.workingdir = os.path.dirname(vagrantfile)
+
+    if not os.path.exists(commandline.workingdir):
+        commandline.workingdir = None
 
     project_found = commandline.workingdir is not None
     if project_found is True:
@@ -1011,7 +1031,7 @@ def host_osx():
     return vmhostosx
 
 
-def input_vagrant_parameters(commandline, numcpus=4, gui=True, instances=4, memory=2048, confirmed=False, deleteoldfiles=False):
+def input_vagrant_parameters(commandline, numcpus=4, gui=False, instances=4, memory=2048, confirmed=False, deleteoldfiles=False):
     """
     @type commandline: VagrantArguments
     @type numcpus : int
@@ -1240,16 +1260,13 @@ def print_config(commandline, deleteoldfiles, gui, instances, memory, name, numc
         groupinfo.add("memory per instance", str(memory))
 
 
-def print_ctl_cmd(commandline, name, systemcmd, shouldhaveword):
+def print_ctl_cmd(name, systemcmd, shouldhaveword):
     """
-    @type commandline: VagrantArguments
     @type name: str
     @type systemcmd: str
     @type shouldhaveword: str
     @return: None
     """
-
-    info(commandline.command, "print_ctl_cmd")
     kunits = []
 
     for line in remote_cmd(name + '.a8.nl', systemcmd, "core", keypath=get_keypaths()).split("\n"):

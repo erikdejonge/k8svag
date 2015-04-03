@@ -3,25 +3,26 @@
 """
 Cluster management tool for setting up a coreos-vagrant cluster
 """
-from __future__ import absolute_import, division, print_function, unicode_literals
+from __future__ import division, print_function, absolute_import, unicode_literals
 
-import netifaces
 import os
-import pickle
-import platform
 import re
+import time
+import pickle
 import shutil
 import socket
-import subprocess
-import time
 import vagrant
 import zipfile
+import platform
+import netifaces
+import subprocess
 import concurrent.futures
+
 from os import path
-from cmdssh import CallCommandException, cmd_run, download, invoke_shell, remote_cmd, remote_cmd_map, scp_run, shell, cmd_exec
 from tempfile import NamedTemporaryFile
-from arguments import BaseArguments, Schema, Use, abort, abspath, delete_directory
-from consoleprinter import Info, console, console_error_exit, console_exception, console_warning, doinput, info, query_yes_no, warning
+from arguments import Use, abort, Schema, abspath, BaseArguments, delete_directory
+from cmdssh import shell, cmd_run, scp_run, cmd_exec, download, remote_cmd, invoke_shell, remote_cmd_map, CallCommandException
+from consoleprinter import Info, info, console, doinput, warning, query_yes_no, console_warning, console_exception, console_error_exit
 
 
 class VagrantArguments(BaseArguments):
@@ -67,12 +68,13 @@ class VagrantArguments(BaseArguments):
                 halt           Halt vagrant cluster (vagrant halt)
                 kubectl        kubectl command [kubectl [<args>...]]
                 reset          Reset cloudconfig settings and replace on cluster, reboots cluster
+                restartvmware  Start or restart vmware
                 ssh            Make ssh connection into specific machine
                 sshcmd         Execute command on cluster (remote command)
                 status         Status of cluster or machine
                 up             Bring cluster up
         """
-        self.validcommands = ['ansible', 'baseprovision', 'coreostoken', 'createproject', 'destroy', 'halt', 'kubectl', 'reload', 'reset', 'ssh', 'sshcmd', 'status', 'up']
+        self.validcommands = ['ansible', 'baseprovision', 'coreostoken', 'createproject', 'destroy', 'halt', 'kubectl', 'reload', 'reset', 'ssh', 'sshcmd', 'status', 'restartvmware', 'up']
         validateschema = Schema({'command': Use(self.validcommand)})
         self.set_command_help("up", "Start all vm's in the cluster")
         self.set_command_help("status", "ssh-config data combined with other data")
@@ -400,6 +402,9 @@ def cmd_driver_vagrant(commandline):
             cmd_remote_command(cmd, commandline.parallel, timeout=5, keypath=get_keypaths())
         except socket.timeout as ex:
             abort("sshcmd: " + commandline.args[0], "exception -> " + str(ex))
+
+    elif commandline.command == "restartvmware":
+        cmd_restart_vmware(commandline)
     else:
         abort(commandline.command, "not implemented")
         console(commandline)
@@ -625,6 +630,45 @@ def cmd_reset(wait):
                     time.sleep(float(wait))
 
             cnt += 1
+
+
+def cmd_restart_vmware(commandline):
+    """
+    @type commandline: VagrantArguments
+    @return: None
+    """
+    
+    osx = is_osx()
+
+    for cnt in range(1, 15):
+        try:
+            if cnt > 2:
+                info(commandline.command, "attempt " + str(cnt))
+            if cnt > 4:
+                if osx:
+                    os.system("sudo vmnet-cli --stop")
+                    time.sleep(1)
+                    os.system("sudo vmnet-cli --start")
+                    time.sleep(2)
+                else:
+                    os.system("sudo /usr/bin/vmware-networks --stop")
+                    time.sleep(1)
+                    os.system("sudo /usr/bin/vmware-networks --start")
+                    time.sleep(2)
+            else:
+                if osx:
+                    cmd_run("sudo vmnet-cli --stop")
+                    time.sleep(1)
+                    cmd_run("sudo vmnet-cli --start")
+                    time.sleep(2)
+                else:
+                    cmd_run("sudo /usr/bin/vmware-networks --stop")
+                    time.sleep(1)
+                    cmd_run("sudo /usr/bin/vmware-networks --start")
+                    time.sleep(2)
+            break
+        except CallCommandException as ex:
+            warning(commandline.command, str(ex) + " attempt " + str(cnt))
 
 
 def cmd_statuscluster(commandline):
@@ -1353,25 +1397,7 @@ def set_gateway_and_coreostoken(commandline):
     else:
         to_file("config/tokenlinux.txt", str(newtoken))
 
-    for cnt in range(1, 15):
-        try:
-            if cnt > 2:
-                info(commandline.command, "attempt " + str(cnt))
-
-            if osx:
-                cmd_run("sudo vmnet-cli --stop")
-                time.sleep(1)
-                cmd_run("sudo vmnet-cli --start")
-                time.sleep(2)
-            else:
-                cmd_run("sudo /usr/bin/vmware-networks --stop")
-                time.sleep(1)
-                cmd_run("sudo /usr/bin/vmware-networks --start")
-                time.sleep(2)
-            break
-        except CallCommandException as ex:
-            warning(commandline.command, str(ex) + " attempt " + str(cnt))
-
+    cmd_restart_vmware(commandline)
     cmd_run("rm -f ~/.ssh/known_hosts")
 
 

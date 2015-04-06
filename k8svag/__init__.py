@@ -449,6 +449,7 @@ def cmd_kubectl(commandline):
         else:
             return s
 
+    #console(kubectl)
     cmd_exec(kubectl, cmdtoprint="kubectl " + params, filter=filterkubectllog)
 
 
@@ -1049,7 +1050,7 @@ def get_working_directory(commandline):
                     commandline.projectname = retname
                     commandline.workingdir = os.path.dirname(vagrantfile)
 
-    if not os.path.exists(commandline.workingdir):
+    if commandline.workingdir and not os.path.exists(commandline.workingdir):
         commandline.workingdir = None
 
     project_found = commandline.workingdir is not None

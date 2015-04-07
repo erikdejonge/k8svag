@@ -55,10 +55,10 @@ class VagrantArguments(BaseArguments):
             Options:
                 -h --help               Show this screen.
                 -p --parallel           Execute commands in parallel, default is serial execution
-                -v --verbose            Verbose mode.
-                -f --force              Do not ask for confirmation
-                -w --wait=<ws>          Wait <ws> seconds between commands.
-                -d --workingdir=<wrkd>  Directory to execute commands in, default is current working dir.
+                --verbose               Verbose mode.
+                --force                 Do not ask for confirmation
+                --wait=<ws>             Wait <ws> seconds between commands.
+                --workingdir=<wrkd>     Directory to execute commands in, default is current working dir.
 
             Commands:
                 ansible        Provision cluster with ansible-playbook(s) [(<labelservers>:<nameplaybook>) ..]
@@ -79,7 +79,7 @@ class VagrantArguments(BaseArguments):
         self.set_command_help("up", "Start all vm's in the cluster")
         self.set_command_help("status", "ssh-config data combined with other data")
         self.set_command_help("ansible", "example: cbx ansible myproject all:myplaybook.yml core1:anotherplaybook.yml")
-        self.set_command_help("kubectl", "commands for the kubectl binary")
+        self.set_command_help("kubectl", "commands for the kubectl binary [<help|create|get|args>..]")
 
         super(VagrantArguments, self).__init__(doc, validateschema, parent=parent)
 
@@ -116,22 +116,6 @@ def bool_to_text(inputbool):
         return "\033[31mno\033[0m"
 
 
-def bring_vms_up(provider):
-    """
-    @type provider: str, unicode
-    @return: None
-    """
-    if provider is None:
-        raise AssertionError("provider is None")
-
-    p = subprocess.Popen(["python", "-m", "SimpleHTTPServer", "8000"], stdout=open("/dev/null", "w"), stderr=open("/dev/null", "w"))
-    try:
-        cmd = "vagrant up --provider=" + provider
-        cmd_run(cmd)
-    finally:
-        p.kill()
-
-
 def cat(fpath, mode="rt"):
     """
     @type fpath: str
@@ -154,7 +138,7 @@ def cmd_baseprovision(commandline, provider):
         console(ex)
 
     info(commandline.command, "make directories on server")
-    bring_vms_up(provider)
+    cmd_up(provider)
     cmd_remote_command("sudo mkdir /root/pypy&&sudo ln -s /home/core/bin /root/pypy/bin;", commandline.parallel, keypath=get_keypaths())
     info(commandline.command, "install python container on server")
     cmd_provision_ansible("all", "./playbooks/ansiblebootstrap.yml", None)
@@ -246,7 +230,7 @@ def cmd_createproject(commandline):
     if readytoboot:
         provider = get_provider()
         set_gateway_and_coreostoken(commandline)
-        bring_vms_up(provider)
+        cmd_up(provider)
 
 
 def cmd_createproject_driver(commandline, name, project_found):
@@ -309,9 +293,6 @@ def cmd_driver_vagrant(commandline):
     if hasattr(commandline, "help") and commandline.help is True:
         return
 
-    console("Active8 => ", plaintext=True, color="orange", newline=False)
-    console("CoreOS Vagrant Kubernetes Cluster", plaintext=True, color="green")
-
     if len(commandline.args) == 0:
         if commandline.workingdir:
             commandline.args.append(commandline.projectname)
@@ -320,18 +301,22 @@ def cmd_driver_vagrant(commandline):
         raise AssertionError("no command set")
 
     project_found, name = get_working_directory(commandline)
+    project_displayname = "CoreOS Vagrant Kubernetes Cluster"
     if not project_found and commandline.command != "createproject":
         abort(commandline.command, "A k8svag environment is required.Run 'k8svag createproject' or \nchange to a directory with a 'Vagrantfile' and '.cl' folder in it.")
     else:
         if commandline.command not in ["createproject"]:
-            info(commandline.command, "project '" + name + "' found in '" + os.getcwd() + "'")
+            project_displayname += "  🚀   " + os.path.dirname(os.getcwd()) + "/\033[91m" + name + "\033[0m\n"
+
+    console("Active8 ", plaintext=True, color="orange", newline=False)
+    console(project_displayname, plaintext=True, color="green")
 
     if commandline.command == "createproject":
         cmd_createproject_driver(commandline, name, project_found)
         cmd_baseprovision(commandline, get_provider())
     elif commandline.command == "up":
         provider = get_provider()
-        bring_vms_up(provider)
+        cmd_up(provider)
     elif commandline.command == "halt":
         cmd_run("vagrant halt")
     elif commandline.command == "kubectl":
@@ -380,29 +365,9 @@ def cmd_driver_vagrant(commandline):
         password = doinput("testansible password", default="")
         cmd_provision_ansible("all", "./playbooks/testansible.yml", password)
     elif commandline.command == "ssh":
-        server = None
-        if commandline.projectname is not None and len(commandline.args) != 1:
-            server = "1"
-        elif len(commandline.args) > 1 or len(commandline.args) == 0:
-            abort(commandline.command, "No server given, [cbx vagrant ssh servername]")
-        else:
-            server = str(commandline.args[0])
-
-        if server is not None:
-            cmd_connect_ssh(server)
-
+        cmd_ssh(commandline)
     elif commandline.command == "sshcmd":
-        cmd = None
-
-        if len(commandline.args) == 0:
-            warning(commandline.command, "no remote command entered [...vagrant <projectname> <sshcmd>]")
-        else:
-            cmd = commandline.args[0]
-        try:
-            cmd_remote_command(cmd, commandline.parallel, timeout=5, keypath=get_keypaths())
-        except socket.timeout as ex:
-            abort("sshcmd: " + commandline.args[0], "exception -> " + str(ex))
-
+        cmd_sshcmd(commandline)
     elif commandline.command == "restartvmware":
         cmd_restart_vmware(commandline)
     else:
@@ -431,11 +396,15 @@ def cmd_kubectl(commandline):
     if not os.path.exists(kubectl):
         abort(commandline.command, "kubectl not found: " + str(kubectl))
 
-    params = " ".join(commandline.args)
+    kubectl += " --server="
+    vmhostosx = is_osx()
 
-    if len(params) > 0:
-        kubectl += " "
-        kubectl += params
+    if vmhostosx is True:
+        kubectl += "http://core1.a8.nl:8080"
+    else:
+        kubectl += "http://node1.a8.nl:8080"
+
+    kubectl += " "
 
     def filterkubectllog(s):
         """
@@ -449,14 +418,45 @@ def cmd_kubectl(commandline):
         else:
             return s
 
-    #console(kubectl)
-    cmd_exec(kubectl, cmdtoprint="kubectl " + params, filter=filterkubectllog)
+    if len(commandline.args) > 0:
+        kubectlcmd = commandline.args[0].strip()
+        execute = True
+        kubectl += kubectlcmd + " "
+        restargs = commandline.args[1:]
+        if kubectlcmd == "create":
+            if len(restargs) == 0:
+                info("create options", "create FILENAME (k8svag kubectl create pod.json")
+                execute = False
+            kubectl += "-f "
+            kubectl += " ".join(restargs)
+            info(commandline.command, kubectl)
+        elif kubectlcmd == "get":
+            if len(restargs) == 0:
+                info("get options", "Possible resources include\n- pods (po)\n- replication controllers (rc)\n- services (svc)\n- minions (mi)\n- events (ev)")
+                execute = False
+            kubectl += " ".join(restargs)
+        elif kubectlcmd == "delete":
+            if len(restargs) == 0:
+                info("delete options", "Flags:\n--all=false: [-all] to select all the specified resources\n-f, --filename=[]: Filename, directory, or URL to a file containing the resource to delete\n-h, --help=false: help for delete\n   -l, --selector="": Selector (label query) to filter on")
+            execute = False
+
+        else:
+            execute = False
+
+        if execute is True:
+            cmd_exec(kubectl, cmdtoprint=kubectl, filter=filterkubectllog)
+        else:
+            print(kubectl)
+    else:
+        print(commandline)
+        abort(commandline.command, "unknown command")
 
 
 def cmd_print_coreos_token_stdout():
     """
     print_coreos_token_stdout
     """
+
     print("\033[36m" + str(get_token()) + "\033[0m")
 
 
@@ -578,7 +578,7 @@ def cmd_remote_command(command, parallel, wait=False, server=None, timeout=60, k
             print_sshcmd_remote_command_result(result)
 
 
-def cmd_reset(wait):
+def cmd_reset(wait=None):
     """
     @type wait: int
     @return: None
@@ -638,13 +638,13 @@ def cmd_restart_vmware(commandline):
     @type commandline: VagrantArguments
     @return: None
     """
-    
     osx = is_osx()
 
     for cnt in range(1, 15):
         try:
             if cnt > 2:
                 info(commandline.command, "attempt " + str(cnt))
+
             if cnt > 4:
                 if osx:
                     os.system("sudo vmnet-cli --stop")
@@ -670,6 +670,40 @@ def cmd_restart_vmware(commandline):
             break
         except CallCommandException as ex:
             warning(commandline.command, str(ex) + " attempt " + str(cnt))
+
+
+def cmd_ssh(commandline):
+    """
+    @type commandline: VagrantArguments
+    @return: None
+    """
+    server = None
+    if commandline.projectname is not None and len(commandline.args) != 1:
+        server = "1"
+    elif len(commandline.args) > 1 or len(commandline.args) == 0:
+        abort(commandline.command, "No server given, [cbx vagrant ssh servername]")
+    else:
+        server = str(commandline.args[0])
+
+    if server is not None:
+        cmd_connect_ssh(server)
+
+
+def cmd_sshcmd(commandline):
+    """
+    @type commandline: VagrantArguments
+    @return: None
+    """
+    cmd = None
+
+    if len(commandline.args) == 0:
+        warning(commandline.command, "no remote command entered [...vagrant <projectname> <sshcmd>]")
+    else:
+        cmd = commandline.args[0]
+    try:
+        cmd_remote_command(cmd, commandline.parallel, timeout=5, keypath=get_keypaths())
+    except socket.timeout as ex:
+        abort("sshcmd: " + commandline.args[0], "exception -> " + str(ex))
 
 
 def cmd_statuscluster(commandline):
@@ -711,6 +745,28 @@ def cmd_statuscluster(commandline):
                 console_exception(cpex)
     else:
         cmd_run("vagrant status")
+
+
+def cmd_up(provider):
+    """
+    @type provider: str, unicode
+    @return: None
+    """
+    curr_gw = get_default_gateway()
+    config_gw = open("config/gateway.txt").read()
+    if curr_gw.strip() != config_gw.strip():
+        cmd_reset()
+
+    if provider is None:
+        raise AssertionError("provider is None")
+
+    p = subprocess.Popen(["python", "-m", "SimpleHTTPServer", "8000"], stdout=open("/dev/null", "w"), stderr=open("/dev/null", "w"))
+    try:
+        cmd = "vagrant up --provider=" + provider
+        cmd_run(cmd)
+    finally:
+        p.kill()
+        cmd_exec("date")
 
 
 def configure_generic_cluster_files_for_this_machine(commandline, gui, numinstance, memory, numcpu):
@@ -877,6 +933,23 @@ def generate_keypair(cmdname, comment, privatekeypath):
         os.remove(privatekeypath + ".pub")
 
     cmd_run("ssh-keygen -t rsa -C \"" + comment + "\" -b 4096 -f ./" + os.path.basename(privatekeypath) + " -N \"\"", cwd=os.path.dirname(privatekeypath))
+
+
+def get_default_gateway():
+    """
+    get_default_gateway
+    """
+    default_gateway = None
+    gateways = netifaces.gateways()
+
+    for gws in gateways:
+        if gws == "default":
+            for gw in gateways[gws]:
+                for gw2 in gateways[gws][gw]:
+                    if "." in gw2:
+                        default_gateway = gw2
+
+    return default_gateway
 
 
 def get_keypaths():
@@ -1374,16 +1447,7 @@ def set_gateway_and_coreostoken(commandline):
     @type commandline: VagrantArguments
     @return: None
     """
-    default_gateway = None
-    gateways = netifaces.gateways()
-
-    for gws in gateways:
-        if gws == "default":
-            for gw in gateways[gws]:
-                for gw2 in gateways[gws][gw]:
-                    if "." in gw2:
-                        default_gateway = gw2
-
+    default_gateway = get_default_gateway()
     if default_gateway is None:
         abort(commandline.command, "default gateway could not be found")
     else:

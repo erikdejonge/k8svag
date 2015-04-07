@@ -465,10 +465,9 @@ def cmd_kubectl(commandline):
 
         elif kubectlcmd == "version":
             execute = cmd_version(commandline, kubectl)
-        else:
-            execute = False
 
         if execute is True:
+
             cmd_exec(kubectl, cmdtoprint=kubectl, filter=filterkubectllog)
 
     elif len(commandline.args) == 0:
@@ -1210,7 +1209,7 @@ def host_osx():
     return vmhostosx
 
 
-def input_vagrant_parameters(commandline, numcpus=4, gui=False, instances=4, memory=2048, confirmed=False, deleteoldfiles=False):
+def input_vagrant_parameters(commandline, numcpus=4, gui=False, instances=3, memory=2048, confirmed=False, deleteoldfiles=False):
     """
     @type commandline: VagrantArguments
     @type numcpus : int

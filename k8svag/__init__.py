@@ -3,10 +3,11 @@
 """
 Cluster management tool for setting up a coreos-vagrant cluster
 """
-from __future__ import division, print_function, absolute_import, unicode_literals
 
+from __future__ import division, print_function, absolute_import, unicode_literals
 import os
 import re
+import json
 import time
 import pickle
 import shutil
@@ -55,10 +56,10 @@ class VagrantArguments(BaseArguments):
             Options:
                 -h --help               Show this screen.
                 -p --parallel           Execute commands in parallel, default is serial execution
-                --verbose               Verbose mode.
-                --force                 Do not ask for confirmation
-                --wait=<ws>             Wait <ws> seconds between commands.
-                --workingdir=<wrkd>     Directory to execute commands in, default is current working dir.
+                -v --verbose            Verbose mode.
+                -f --force              Do not ask for confirmation
+                -w --wait=<ws>          Wait <ws> seconds between commands.
+                -d --workingdir=<wrkd>  Directory to execute commands in, default is current working dir.
 
             Commands:
                 ansible        Provision cluster with ansible-playbook(s) [(<labelservers>:<nameplaybook>) ..]
@@ -67,6 +68,7 @@ class VagrantArguments(BaseArguments):
                 destroy        Destroy vagrant cluster (vagrant destroy -f)
                 halt           Halt vagrant cluster (vagrant halt)
                 kubectl        kubectl command [kubectl [<args>...]]
+                reboot         Reboot the cluster
                 reset          Reset cloudconfig settings and replace on cluster, reboots cluster
                 restartvmware  Start or restart vmware
                 ssh            Make ssh connection into specific machine
@@ -74,12 +76,12 @@ class VagrantArguments(BaseArguments):
                 status         Status of cluster or machine
                 up             Bring cluster up
         """
-        self.validcommands = ['ansible', 'baseprovision', 'coreostoken', 'createproject', 'destroy', 'halt', 'kubectl', 'reload', 'reset', 'ssh', 'sshcmd', 'status', 'restartvmware', 'up']
+        self.validcommands = ['ansible', 'baseprovision', 'coreostoken', 'createproject', 'destroy', 'halt', 'kubectl', 'reload', 'reset', 'ssh', 'sshcmd', 'status', 'reboot', 'restartvmware', 'up']
         validateschema = Schema({'command': Use(self.validcommand)})
         self.set_command_help("up", "Start all vm's in the cluster")
         self.set_command_help("status", "ssh-config data combined with other data")
         self.set_command_help("ansible", "example: cbx ansible myproject all:myplaybook.yml core1:anotherplaybook.yml")
-        self.set_command_help("kubectl", "commands for the kubectl binary [<help|create|get|args>..]")
+        self.set_command_help("kubectl", "commands for the kubectl binary [<help|create|get|version|delete|args>..]")
 
         super(VagrantArguments, self).__init__(doc, validateschema, parent=parent)
 
@@ -124,6 +126,31 @@ def cat(fpath, mode="rt"):
     """
     with open(fpath, mode) as f:
         return f.read()
+
+
+def cmd_ansible(commandline):
+    playbook = None
+    server = None
+    password = None
+    for serverplaybook in commandline.args:
+        spb = serverplaybook.split(":")
+
+        if len(spb) == 2:
+            playbook = os.path.abspath(os.path.expanduser(spb[1]))
+            server = spb[0].strip()
+        elif len(spb) == 2:
+            playbook = os.path.abspath(os.path.expanduser(spb[1]))
+            server = spb[0].strip()
+            password = spb[2].strip()
+    if playbook and os.path.exists(playbook):
+        info(commandline.command, "playbook found at " + playbook)
+    else:
+        warning(commandline.command, "no playbook found at " + playbook)
+    if server is None:
+        abort(commandline.command, "server is None")
+    elif playbook is None:
+        abort(commandline.command, "playbook is None")
+    cmd_provision_ansible(server, playbook, password)
 
 
 def cmd_baseprovision(commandline, provider):
@@ -327,38 +354,15 @@ def cmd_driver_vagrant(commandline):
         cmd_destroy_vagrant_cluster()
     elif commandline.command == "reload":
         cmd_run("vagrant reload")
+    elif commandline.command == "reboot":
+        cmd_remote_command("sudo reboot", True, timeout=5, keypath=get_keypaths())
     elif commandline.command == "status":
         cmd_statuscluster(commandline)
     elif commandline.command == "reset":
         set_gateway_and_coreostoken(commandline)
         cmd_reset(commandline.wait)
     elif commandline.command == "ansible":
-        playbook = None
-        server = None
-        password = None
-
-        for serverplaybook in commandline.args:
-            spb = serverplaybook.split(":")
-
-            if len(spb) == 2:
-                playbook = os.path.abspath(os.path.expanduser(spb[1]))
-                server = spb[0].strip()
-            elif len(spb) == 2:
-                playbook = os.path.abspath(os.path.expanduser(spb[1]))
-                server = spb[0].strip()
-                password = spb[2].strip()
-
-        if playbook and os.path.exists(playbook):
-            info(commandline.command, "playbook found at " + playbook)
-        else:
-            warning(commandline.command, "no playbook found at " + playbook)
-
-        if server is None:
-            abort(commandline.command, "server is None")
-        elif playbook is None:
-            abort(commandline.command, "playbook is None")
-
-        cmd_provision_ansible(server, playbook, password)
+        cmd_ansible(commandline)
     elif commandline.command == "baseprovision":
         provider = get_provider()
         cmd_baseprovision(commandline, provider)
@@ -423,10 +427,12 @@ def cmd_kubectl(commandline):
         execute = True
         kubectl += kubectlcmd + " "
         restargs = commandline.args[1:]
+
         if kubectlcmd == "create":
             if len(restargs) == 0:
                 info("create options", "create FILENAME (k8svag kubectl create pod.json")
                 execute = False
+
             kubectl += "-f "
             kubectl += " ".join(restargs)
             info(commandline.command, kubectl)
@@ -434,21 +440,31 @@ def cmd_kubectl(commandline):
             if len(restargs) == 0:
                 info("get options", "Possible resources include\n- pods (po)\n- replication controllers (rc)\n- services (svc)\n- minions (mi)\n- events (ev)")
                 execute = False
+
             kubectl += " ".join(restargs)
+        elif kubectlcmd == "version":
+            execute = cmd_version(commandline, kubectl)
         elif kubectlcmd == "delete":
             if len(restargs) == 0:
-                info("delete options", "Flags:\n--all=false: [-all] to select all the specified resources\n-f, --filename=[]: Filename, directory, or URL to a file containing the resource to delete\n-h, --help=false: help for delete\n   -l, --selector="": Selector (label query) to filter on")
-            execute = False
+                info("delete options", "delete FILENAME/POD | delete name")
+                execute = False
 
+            restarg = "".join(restargs)
+
+            if os.path.exists(restarg):
+                kubectl += "-f "
+                kubectl += restarg
+            else:
+                kubectl += "pods,services -l name = "
+                kubectl += restarg
         else:
             execute = False
 
         if execute is True:
             cmd_exec(kubectl, cmdtoprint=kubectl, filter=filterkubectllog)
-        else:
-            print(kubectl)
+    elif len(commandline.args) == 0:
+        warning(commandline.command, "no arguments given")
     else:
-        print(commandline)
         abort(commandline.command, "unknown command")
 
 
@@ -456,7 +472,6 @@ def cmd_print_coreos_token_stdout():
     """
     print_coreos_token_stdout
     """
-
     print("\033[36m" + str(get_token()) + "\033[0m")
 
 
@@ -767,6 +782,43 @@ def cmd_up(provider):
     finally:
         p.kill()
         cmd_exec("date")
+
+
+def cmd_version(commandline, kubectl):
+    """
+    @type commandline: Arguments
+    @type kubectl: str
+    @return: None
+    """
+    ka = kubectl
+    code, rv = cmd_exec(ka, display=False)
+    if code != 0:
+        abort(ka, code)
+
+    if "version.Info" in rv:
+        for rv in rv.split("\n"):
+            rvs = rv.split("version.Info")
+            jc = rvs[1]
+            jc = jc.replace("{", "{'").replace(":", "':").replace(", ", ", '").replace("'", '"').strip().replace(" ", "")
+            version = json.loads(jc)
+            info(commandline.projectname + " " + rvs[0].lower().strip().strip(":"), version["GitVersion"])
+    else:
+        warning(ka, rv)
+
+    ka = kubectl.strip().rstrip("version") + "apiversions"
+    code, rv = cmd_exec(ka, display=False)
+    if code != 0:
+        abort(ka, code)
+
+    rv = rv.split(":")
+
+    if len(rv) > 1:
+        info(rv[0].lower(), rv[1])
+    else:
+        warning(ka, rv)
+
+    execute = False
+    return execute
 
 
 def configure_generic_cluster_files_for_this_machine(commandline, gui, numinstance, memory, numcpu):
@@ -1586,7 +1638,6 @@ def write_new_tokens(vmhostosx):
     else:
         tlin = tokenpath("linux")
         open(tlin, "w").write(token)
-
 
 if __name__ == "__main__":
     main()

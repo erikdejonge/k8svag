@@ -3,8 +3,8 @@
 """
 Cluster management tool for setting up a coreos-vagrant cluster
 """
-
 from __future__ import division, print_function, absolute_import, unicode_literals
+
 import os
 import re
 import json
@@ -129,9 +129,14 @@ def cat(fpath, mode="rt"):
 
 
 def cmd_ansible(commandline):
+    """
+    @type commandline: VagrantArguments
+    @return: None
+    """
     playbook = None
     server = None
     password = None
+
     for serverplaybook in commandline.args:
         spb = serverplaybook.split(":")
 
@@ -142,14 +147,17 @@ def cmd_ansible(commandline):
             playbook = os.path.abspath(os.path.expanduser(spb[1]))
             server = spb[0].strip()
             password = spb[2].strip()
+
     if playbook and os.path.exists(playbook):
         info(commandline.command, "playbook found at " + playbook)
     else:
         warning(commandline.command, "no playbook found at " + playbook)
+
     if server is None:
         abort(commandline.command, "server is None")
     elif playbook is None:
         abort(commandline.command, "playbook is None")
+
     cmd_provision_ansible(server, playbook, password)
 
 
@@ -430,20 +438,17 @@ def cmd_kubectl(commandline):
 
         if kubectlcmd == "create":
             if len(restargs) == 0:
-                info("create options", "create FILENAME (k8svag kubectl create pod.json")
+                info("create options", "create FILENAME")
                 execute = False
 
             kubectl += "-f "
             kubectl += " ".join(restargs)
-            info(commandline.command, kubectl)
         elif kubectlcmd == "get":
             if len(restargs) == 0:
                 info("get options", "Possible resources include\n- pods (po)\n- replication controllers (rc)\n- services (svc)\n- minions (mi)\n- events (ev)")
                 execute = False
 
             kubectl += " ".join(restargs)
-        elif kubectlcmd == "version":
-            execute = cmd_version(commandline, kubectl)
         elif kubectlcmd == "delete":
             if len(restargs) == 0:
                 info("delete options", "delete FILENAME/POD | delete name")
@@ -455,15 +460,19 @@ def cmd_kubectl(commandline):
                 kubectl += "-f "
                 kubectl += restarg
             else:
-                kubectl += "pods,services -l name = "
+                kubectl += "pods,services -l name="
                 kubectl += restarg
+
+        elif kubectlcmd == "version":
+            execute = cmd_version(commandline, kubectl)
         else:
             execute = False
 
         if execute is True:
             cmd_exec(kubectl, cmdtoprint=kubectl, filter=filterkubectllog)
+
     elif len(commandline.args) == 0:
-        warning(commandline.command, "no arguments given")
+        warning(commandline.command, "no arguments given, options:\n- create\n- delete\n- get\n- version")
     else:
         abort(commandline.command, "unknown command")
 
@@ -786,7 +795,7 @@ def cmd_up(provider):
 
 def cmd_version(commandline, kubectl):
     """
-    @type commandline: Arguments
+    @type commandline: VagrantArguments
     @type kubectl: str
     @return: None
     """
@@ -1638,6 +1647,7 @@ def write_new_tokens(vmhostosx):
     else:
         tlin = tokenpath("linux")
         open(tlin, "w").write(token)
+
 
 if __name__ == "__main__":
     main()

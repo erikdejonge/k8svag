@@ -589,7 +589,8 @@ def cmd_remote_command(command, parallel, wait=False, server=None, timeout=60, k
 
                     for server, result in result:
                         if result.strip():
-                            warning(command, server.split(".")[0])
+
+                            info(command, server.split(".")[0])
                             lastoutput = print_sshcmd_remote_command_result(result, lastoutput)
                         else:
                             warning(command, server.split(".")[0] + "... done")

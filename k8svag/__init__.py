@@ -173,14 +173,14 @@ def cmd_baseprovision(commandline, provider):
         console(ex)
 
     info(commandline.command, "make directories on server")
-    cmd_up(provider)
+    cmd_up(commandline, provider)
     cmd_remote_command("sudo mkdir /root/pypy&&sudo ln -s /home/core/bin /root/pypy/bin;", commandline.parallel, keypath=get_keypaths())
     info(commandline.command, "install python container on server")
     cmd_provision_ansible("all", "./playbooks/ansiblebootstrap.yml", None)
     keypath = os.path.join(os.getcwd(), "keys/secure/vagrantsecure")
     generate_keypair(commandline.command, "core user vagrant", keypath)
     cmd_provision_ansible("all", "./playbooks/keyswap.yml", None)
-    cmd_reset(commandline.wait)
+    cmd_reset(commandline, commandline.wait)
 
 
 def cmd_connect_ssh(server):
@@ -265,7 +265,7 @@ def cmd_createproject(commandline):
     if readytoboot:
         provider = get_provider()
         set_gateway_and_coreostoken(commandline)
-        cmd_up(provider)
+        cmd_up(commandline, provider)
 
 
 def cmd_createproject_driver(commandline, name, project_found):
@@ -351,7 +351,7 @@ def cmd_driver_vagrant(commandline):
         cmd_baseprovision(commandline, get_provider())
     elif commandline.command == "up":
         provider = get_provider()
-        cmd_up(provider)
+        cmd_up(commandline, provider)
     elif commandline.command == "halt":
         cmd_run("vagrant halt")
     elif commandline.command == "kubectl":
@@ -368,7 +368,7 @@ def cmd_driver_vagrant(commandline):
         cmd_statuscluster(commandline)
     elif commandline.command == "reset":
         set_gateway_and_coreostoken(commandline)
-        cmd_reset(commandline.wait)
+        cmd_reset(commandline, commandline.wait)
     elif commandline.command == "ansible":
         cmd_ansible(commandline)
     elif commandline.command == "baseprovision":
@@ -600,12 +600,17 @@ def cmd_remote_command(command, parallel, wait=False, server=None, timeout=60, k
             print_sshcmd_remote_command_result(result)
 
 
-def cmd_reset(wait=None):
+def cmd_reset(commandline, wait=None):
     """
-    @type wait: int
+    @type commandline: VagrantArguments
+    @type wait: str, None
     @return: None
     """
     vmhostosx = is_osx()
+    ntl = "configscripts/node.tmpl.yml"
+    write_config_from_template(commandline, ntl, vmhostosx)
+    ntl = "configscripts/master.tmpl.yml"
+    write_config_from_template(commandline, ntl, vmhostosx)
     write_new_tokens(vmhostosx)
     cmd_run("rm -f " + os.path.join(os.getcwd(), "./configscripts") + "/user-data*")
     console("Replace cloudconfiguration, checking vms are up")
@@ -769,15 +774,16 @@ def cmd_statuscluster(commandline):
         cmd_run("vagrant status")
 
 
-def cmd_up(provider):
+def cmd_up(commandline, provider):
     """
-    @type provider: str, unicode
+    @type commandline: VagrantArguments
+    @type provider: str
     @return: None
     """
     curr_gw = get_default_gateway()
     config_gw = open("config/gateway.txt").read()
     if curr_gw.strip() != config_gw.strip():
-        cmd_reset()
+        cmd_reset(commandline)
 
     if provider is None:
         raise AssertionError("provider is None")
@@ -926,7 +932,7 @@ def download_and_unzip_k8svagrant_project(commandline):
                 download("https://github.com/erikdejonge/k8svag-createproject/archive/master.zip", zippath)
                 unzip("master.zip")
                 break
-            except zipfile.BadZipFile as zex:
+            except zipfile.BadZipFile:
                 if cnt > 5:
                     warning("badzipfile", "try again " + str(cnt))
     else:

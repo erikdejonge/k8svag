@@ -613,7 +613,7 @@ def cmd_reset(commandline, wait=None):
     write_config_from_template(commandline, ntl, vmhostosx)
     write_new_tokens(vmhostosx)
     cmd_run("rm -f " + os.path.join(os.getcwd(), "./configscripts") + "/user-data*")
-    console("Replace cloudconfiguration, checking vms are up")
+    info(commandline.command, "replace cloudconfiguration, checking vms are up")
     p = subprocess.Popen(["/usr/bin/vagrant", "up"], cwd=os.getcwd())
     p.wait()
     vmnames = get_vm_names()

@@ -206,19 +206,27 @@ def cmd_connect_ssh(server):
     except BaseException as ex:
         console(ex)
 
-    if server not in vmnames and index is not None:
+    if server == "all" or server not in vmnames and index is not None:
         for name in vmnames:
             cnt += 1
 
-            if index == cnt:
-                print("ssh ->", name)
+            if server == "all" or index == cnt:
+                info("ssh", name)
+
                 while True:
                     try:
                         try:
-                            if shell("ssh core@" + name + ".a8.nl") == 0:
+                            rv = shell("ssh core@" + name + ".a8.nl")
+
+                            if rv == 255:
+                                info(name, "waiting")
+                                time.sleep(1)
+                            else:
+                                if rv != 0:
+                                    info("exit", rv)
                                 break
                         except BaseException as ex:
-                            console(ex)
+                            warning(name, str(ex))
                             if invoke_shell(name + ".a8.nl", "core", get_keypaths()) != 0:
                                 print("connection lost, trying in 1 seconds (ctrl-c to quit)")
                                 time.sleep(1)
@@ -226,27 +234,27 @@ def cmd_connect_ssh(server):
                                 break
 
                     except KeyboardInterrupt:
-                        print("-connect_ssh:bye")
+                        info("connect_ssh", "bye")
                         break
 
                 if server != 'all':
                     break
-        else:
-            info("ssh", "server " + server + " not found, options are:")
-            answers = []
-
-            for name in vmnames:
-                answers.append(name)
-
-            inputserver = doinput("enter number", answers=answers)
-            cmd = "vagrant ssh " + inputserver
-            shell(cmd)
     else:
-        if server == 'all':
-            print("vagrant ssh all is not possible")
-        else:
+        if server in vmnames:
             cmd = "vagrant ssh " + server
             shell(cmd)
+        else:
+            if server != 'all':
+
+                warning("ssh", "server " + server + " not found, options are:")
+                answers = []
+
+                for name in vmnames:
+                    answers.append(name)
+
+                inputserver = doinput("enter name or number:", answers=answers)
+                cmd = "vagrant ssh " + inputserver
+                shell(cmd)
 
 
 def cmd_createproject(commandline):
@@ -341,7 +349,7 @@ def cmd_driver_vagrant(commandline):
         abort(commandline.command, "A k8svag environment is required.Run 'k8svag createproject' or \nchange to a directory with a 'Vagrantfile' and '.cl' folder in it.")
     else:
         if commandline.command not in ["createproject"]:
-            project_displayname += "  🚀   " + os.path.dirname(os.getcwd()) + "/\033[91m" + name + "\033[0m\n"
+            project_displayname += "  🚀   " + os.path.dirname(os.getcwd()) + "/\033[91m" + name + "\033[0m\n-"
 
     console("Active8 ", plaintext=True, color="orange", newline=False)
     console(project_displayname, plaintext=True, color="green")
@@ -377,6 +385,7 @@ def cmd_driver_vagrant(commandline):
         password = doinput("testansible password", default="")
         cmd_provision_ansible("all", "./playbooks/testansible.yml", password)
     elif commandline.command == "ssh":
+
         cmd_ssh(commandline)
     elif commandline.command == "sshcmd":
         cmd_sshcmd(commandline)
@@ -1213,7 +1222,7 @@ def host_osx():
     return vmhostosx
 
 
-def input_vagrant_parameters(commandline, numcpus=4, gui=False, instances=4, memory=2048, confirmed=False, deleteoldfiles=False):
+def input_vagrant_parameters(commandline, numcpus=8, gui=False, instances=4, memory=2048, confirmed=False, deleteoldfiles=False):
     """
     @type commandline: VagrantArguments
     @type numcpus : int

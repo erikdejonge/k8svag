@@ -467,7 +467,6 @@ def cmd_kubectl(commandline):
             execute = cmd_version(commandline, kubectl)
 
         if execute is True:
-
             cmd_exec(kubectl, cmdtoprint=kubectl, filter=filterkubectllog)
 
     elif len(commandline.args) == 0:
@@ -589,7 +588,6 @@ def cmd_remote_command(command, parallel, wait=False, server=None, timeout=60, k
 
                     for server, result in result:
                         if result.strip():
-
                             info(command, server.split(".")[0])
                             lastoutput = print_sshcmd_remote_command_result(result, lastoutput)
                         else:
@@ -790,7 +788,6 @@ def cmd_up(provider):
         cmd_run(cmd)
     finally:
         p.kill()
-        cmd_exec("date")
 
 
 def cmd_version(commandline, kubectl):
@@ -930,8 +927,8 @@ def download_and_unzip_k8svagrant_project(commandline):
                 unzip("master.zip")
                 break
             except zipfile.BadZipFile as zex:
-                if cnt > 2:
-                    console(zex, " - try again, attempt:", cnt, color="orange")
+                if cnt > 5:
+                    warning("badzipfile", "try again " + str(cnt))
     else:
         try:
             unzip("master.zip")

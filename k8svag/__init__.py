@@ -351,7 +351,7 @@ def cmd_driver_vagrant(commandline):
         if commandline.command not in ["createproject"]:
             project_displayname += "  🚀   " + os.path.dirname(os.getcwd()) + "/\033[91m" + name + "\033[0m\n-"
 
-    console("Active8 ", plaintext=True, color="orange", newline=False)
+    console("Active8", plaintext=True, color="orange", newline=False)
     console(project_displayname, plaintext=True, color="green")
 
     if commandline.command == "createproject":
@@ -375,6 +375,10 @@ def cmd_driver_vagrant(commandline):
     elif commandline.command == "status":
         cmd_statuscluster(commandline)
     elif commandline.command == "reset":
+        removelist = ["user-data" + str(x)+".yml" for x in range(1, get_num_instances() + 1)]
+        removelist.extend(["master.yml", "node.yml"])
+        removelist = [os.path.join(os.path.join(commandline.workingdir, "configscripts"), x) for x in removelist]
+        [os.remove(x) for x in removelist if os.path.exists(x)]
         set_gateway_and_coreostoken(commandline)
         cmd_reset(commandline, commandline.wait)
     elif commandline.command == "ansible":
@@ -505,7 +509,7 @@ def cmd_provision_ansible(targetvmname, playbook, password):
         f.write(password)
         f.seek(0)
 
-    print("\033[34mAnsible playbook:", playbook, "\033[0m")
+    info("ansible-playbook:", playbook)
     p = subprocess.Popen(["python", "-m", "SimpleHTTPServer", "8000"], stdout=open("/dev/null", "w"), stderr=open("/dev/null", "w"))
     try:
         if path.exists("./hosts"):
@@ -520,14 +524,14 @@ def cmd_provision_ansible(targetvmname, playbook, password):
             else:
                 for vmname in vmnames:
                     if targetvmname == vmname:
-                        print("provisioning", vmname)
+                        info("provisioning", vmname)
                         cmd = "ansible-playbook -u core -i ./hosts  -u core --limit=" + vmname + " " + playbook
 
                         if password is not None:
                             cmd += " --vault-password-file " + f.name
                         cmd_run(cmd, prefix=targetvmname + ":" + playbook)
                     else:
-                        print("skipping", vmname)
+                        info("skipping", vmname)
         else:
             cmd_run("vagrant provision")
     finally:
@@ -579,7 +583,7 @@ def cmd_remote_command(command, parallel, wait=False, server=None, timeout=60, k
                                 if iquit.strip() == "n":
                                     break
                             except KeyboardInterrupt:
-                                print("-sshcmd_remote_command:bye")
+                                info(str(command), "sshcmd_remote_command:bye")
                                 break
                         else:
                             time.sleep(float(wait))
@@ -639,10 +643,8 @@ def cmd_reset(commandline, wait=None):
             scp_run(server=name + '.a8.nl', cmdtype="put", fp1="configscripts/user-data" + str(cnt) + ".yml", fp2="/tmp/vagrantfile-user-data", username="core", keypath=get_keypaths())
             cmd = "sudo cp /tmp/vagrantfile-user-data /var/lib/coreos-vagrant/vagrantfile-user-data"
             remote_cmd(name + '.a8.nl', cmd, username='core', keypath=get_keypaths())
-            print("\033[37m", name, "uploaded config, rebooting now", "\033[0m")
+            info(name, "uploaded config rebooting now")
 
-            if wait:
-                print("wait: ", wait)
 
             logpath = path.join(os.getcwd(), "logs/" + name + "-serial.txt")
 
@@ -661,7 +663,7 @@ def cmd_reset(commandline, wait=None):
 
                         cmd_run("clear")
                     except KeyboardInterrupt:
-                        print("-reset:bye")
+                        info(commandline.command, "reset:bye")
                         break
                 else:
                     time.sleep(float(wait))
@@ -1125,19 +1127,15 @@ def get_vm_names(retry=False):
         vmnames = []
         numinstances = None
 
-        # noinspection PyBroadException
-        try:
-            numinstances = get_num_instances()
-            osx = is_osx()
+        numinstances = get_num_instances()
+        osx = is_osx()
 
-            for i in range(1, numinstances + 1):
-                if osx is True:
-                    vmnames.append(["core" + str(i), None])
-                else:
-                    vmnames.append(["node" + str(i), None])
+        for i in range(1, numinstances + 1):
+            if osx is True:
+                vmnames.append(["core" + str(i), None])
+            else:
+                vmnames.append(["node" + str(i), None])
 
-        except Exception as e:
-            print("\033[31m", e, "\033[0m")
 
         if numinstances is None:
             v = vagrant.Vagrant()
@@ -1386,7 +1384,7 @@ def main():
     try:
         run_commandline()
     except KeyboardInterrupt:
-        print("bye")
+        info("main", "bye")
 
 
 def prepare_config(func_extra_config=None):

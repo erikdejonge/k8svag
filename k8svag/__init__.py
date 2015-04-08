@@ -1210,7 +1210,7 @@ def host_osx():
     return vmhostosx
 
 
-def input_vagrant_parameters(commandline, numcpus=4, gui=False, instances=3, memory=2048, confirmed=False, deleteoldfiles=False):
+def input_vagrant_parameters(commandline, numcpus=4, gui=False, instances=4, memory=2048, confirmed=False, deleteoldfiles=False):
     """
     @type commandline: VagrantArguments
     @type numcpus : int

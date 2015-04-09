@@ -8,6 +8,7 @@ from __future__ import division, print_function, absolute_import, unicode_litera
 import os
 import re
 import json
+import stat
 import time
 import pickle
 import shutil
@@ -292,7 +293,8 @@ def cmd_createproject_driver(commandline, name, project_found):
             shutil.rmtree(str(commandline.workingdir))
 
         warning(commandline.command, str(be))
-        raise
+        if not isinstance(be, KeyboardInterrupt):
+            raise
 
     trycnt = 0
     while trycnt < 5:
@@ -348,7 +350,7 @@ def cmd_driver_vagrant(commandline):
         abort(commandline.command, "A k8svag environment is required.Run 'k8svag createproject' or \nchange to a directory with a 'Vagrantfile' and '.cl' folder in it.")
     else:
         if commandline.command not in ["createproject"]:
-            project_displayname += "  🚀   " + os.path.dirname(os.getcwd()) + "/\033[91m" + name + "\033[0m\n-"
+            project_displayname += ": " + os.path.dirname(os.getcwd()) + "/\033[91m" + name + "\033[0m\n  🚀"
 
     console("Active8", plaintext=True, color="orange", newline=False)
     console(project_displayname, plaintext=True, color="green")
@@ -423,6 +425,9 @@ def cmd_kubectl(commandline):
     if not os.path.exists(kubectl):
         abort(commandline.command, "kubectl not found: " + str(kubectl))
 
+    if not os.access(kubectl, os.X_OK):
+        info("make-exec", kubectl)
+        os.chmod(kubectl, stat.S_IREAD | stat.S_IWRITE | stat.S_IEXEC)
     kubectl += " --server="
     vmhostosx = is_osx()
 
@@ -482,7 +487,12 @@ def cmd_kubectl(commandline):
             execute = cmd_version(commandline, kubectl)
 
         if execute is True:
-            cmd_exec(kubectl, cmdtoprint=kubectl, filter=filterkubectllog)
+            code, _ = cmd_exec(kubectl, cmdtoprint=kubectl, filter=filterkubectllog)
+
+
+
+
+
 
     elif len(commandline.args) == 0:
         warning(commandline.command, "no arguments given, options:\n- create\n- delete\n- get\n- version")
@@ -558,6 +568,9 @@ def cmd_remote_command(command, parallel, wait=0, server=None, timeout=60, keypa
     else:
         serverinfo = server
 
+    if wait is None:
+        wait = 0
+
     if parallel:
         cmdinfo += " in parallel"
         if wait != 0:
@@ -585,7 +598,7 @@ def cmd_remote_command(command, parallel, wait=0, server=None, timeout=60, keypa
                     result = remote_cmd(name + '.a8.nl', cmd, timeout=timeout, username='core', keypath=keypath)
 
                     if result.strip():
-                        print_sshcmd_remote_command_result(name, result)
+                        cmd_remote_command_print_result(name, result)
                     else:
                         info(name, command)
 
@@ -615,7 +628,7 @@ def cmd_remote_command(command, parallel, wait=0, server=None, timeout=60, keypa
 
                     for server, result in result:
                         if result.strip():
-                            lastoutput = print_sshcmd_remote_command_result(server.split(".")[0], result, lastoutput)
+                            lastoutput = cmd_remote_command_print_result(server.split(".")[0], result, lastoutput)
                         else:
                             warning(command, server.split(".")[0] + "... done")
     else:
@@ -623,7 +636,28 @@ def cmd_remote_command(command, parallel, wait=0, server=None, timeout=60, keypa
         result = remote_cmd(server + '.a8.nl', cmd, username='core', keypath=get_keypaths())
 
         if result:
-            print_sshcmd_remote_command_result(server, result)
+            cmd_remote_command_print_result(server, result)
+
+
+def cmd_remote_command_print_result(server, result, lastoutput=""):
+    """
+    @type server: str, unicode
+    @type result: str, unicode
+    @type lastoutput: str
+    @return: None
+    """
+    result = result.strip()
+
+    if "\n" in result:
+        result = "\n" + result + "\n-"
+
+    server = "results " + server
+    if result != lastoutput:
+        console(str(server) + ":", result, color="blue", plainprint=True)
+    else:
+        console(str(server) + ":", "same", color="black", plainprint=True)
+
+    return result
 
 
 def cmd_reset(commandline, wait=None):
@@ -1482,21 +1516,6 @@ def print_ctl_cmd(name, systemcmd, shouldhaveword):
             servicesplit = line.split(".service")
             service = [x.strip() for x in servicesplit]
             groupinfo.add(service[0], "".join(service[1:]))
-
-
-def print_sshcmd_remote_command_result(server, result, lastoutput=""):
-    """
-    @type server: str, unicode
-    @type result: str, unicode
-    @type lastoutput: str
-    @return: None
-    """
-    if result != lastoutput:
-        console(str(server) + ":", result.strip(), color="blue", plainprint=True)
-    else:
-        console(str(server) + ":", "same", color="black", plainprint=True)
-
-    return result
 
 
 def run_commandline(parent=None):

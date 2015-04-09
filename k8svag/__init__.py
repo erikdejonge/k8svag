@@ -23,7 +23,7 @@ from os import path
 from tempfile import NamedTemporaryFile
 from arguments import Use, abort, Schema, abspath, BaseArguments, delete_directory
 from cmdssh import shell, cmd_run, scp_run, cmd_exec, download, remote_cmd, invoke_shell, remote_cmd_map, CallCommandException
-from consoleprinter import Info, info, console, doinput, warning, query_yes_no, console_warning, console_exception, console_error_exit
+from consoleprinter import Info, info, console, doinput, warning, clear_screen, query_yes_no, console_warning, console_exception, console_error_exit
 
 
 class VagrantArguments(BaseArguments):
@@ -245,7 +245,6 @@ def cmd_connect_ssh(server):
             shell(cmd)
         else:
             if server != 'all':
-
                 warning("ssh", "server " + server + " not found, options are:")
                 answers = []
 
@@ -354,6 +353,10 @@ def cmd_driver_vagrant(commandline):
     console("Active8", plaintext=True, color="orange", newline=False)
     console(project_displayname, plaintext=True, color="green")
 
+    if commandline.wait and commandline.wait > 10 and commandline.force is False:
+        if query_yes_no("wait is very large (" + str(commandline.wait) + ") continue", default=True) is False:
+            return
+
     if commandline.command == "createproject":
         cmd_createproject_driver(commandline, name, project_found)
         cmd_baseprovision(commandline, get_provider())
@@ -375,7 +378,7 @@ def cmd_driver_vagrant(commandline):
     elif commandline.command == "status":
         cmd_statuscluster(commandline)
     elif commandline.command == "reset":
-        removelist = ["user-data" + str(x)+".yml" for x in range(1, get_num_instances() + 1)]
+        removelist = ["user-data" + str(x) + ".yml" for x in range(1, get_num_instances() + 1)]
         removelist.extend(["master.yml", "node.yml"])
         removelist = [os.path.join(os.path.join(commandline.workingdir, "configscripts"), x) for x in removelist]
         [os.remove(x) for x in removelist if os.path.exists(x)]
@@ -389,7 +392,6 @@ def cmd_driver_vagrant(commandline):
         password = doinput("testansible password", default="")
         cmd_provision_ansible("all", "./playbooks/testansible.yml", password)
     elif commandline.command == "ssh":
-
         cmd_ssh(commandline)
     elif commandline.command == "sshcmd":
         cmd_sshcmd(commandline)
@@ -539,21 +541,34 @@ def cmd_provision_ansible(targetvmname, playbook, password):
         os.remove(f.name)
 
 
-def cmd_remote_command(command, parallel, wait=False, server=None, timeout=60, keypath=None):
+def cmd_remote_command(command, parallel, wait=0, server=None, timeout=60, keypath=None):
     """
     @type command: str
     @type parallel: bool
-    @type wait: bool
+    @type wait: int
     @type server: None, str
     @type timeout: int
     @type keypath: None, str
     @return: None
     """
-    if parallel is True:
-        info(command, "execute parallel")
+    cmdinfo = str(command)
 
-    if server is not None:
-        info(command, "on server " + server)
+    if server is None:
+        serverinfo = "cluster"
+    else:
+        serverinfo = server
+
+    if parallel:
+        cmdinfo += " in parallel"
+        if wait != 0:
+            wait = 0
+            warning("wait", "parallel mode wait reset to 0")
+
+    if wait > 0:
+        serverinfo += " wait " + str(wait) + " second"
+    elif wait < 0:
+        serverinfo += " pausing for input"
+    info(serverinfo, cmdinfo)
 
     if server is None:
         vmnames = get_vm_names()
@@ -570,18 +585,17 @@ def cmd_remote_command(command, parallel, wait=False, server=None, timeout=60, k
                     result = remote_cmd(name + '.a8.nl', cmd, timeout=timeout, username='core', keypath=keypath)
 
                     if result.strip():
-                        info(command, "on server " + name)
-                        print_sshcmd_remote_command_result(result)
+                        print_sshcmd_remote_command_result(name, result)
                     else:
-                        info(command, "on server " + name + "...done")
+                        info(name, command)
 
                     if wait is not None:
                         if str(wait) == "-1":
                             try:
-                                iquit = eval(input("continue (y/n): "))
-
-                                if iquit.strip() == "n":
+                                if query_yes_no("continue", default=True) is False:
                                     break
+                                else:
+                                    clear_screen()
                             except KeyboardInterrupt:
                                 info(str(command), "sshcmd_remote_command:bye")
                                 break
@@ -601,8 +615,7 @@ def cmd_remote_command(command, parallel, wait=False, server=None, timeout=60, k
 
                     for server, result in result:
                         if result.strip():
-                            info(command, server.split(".")[0])
-                            lastoutput = print_sshcmd_remote_command_result(result, lastoutput)
+                            lastoutput = print_sshcmd_remote_command_result(server.split(".")[0], result, lastoutput)
                         else:
                             warning(command, server.split(".")[0] + "... done")
     else:
@@ -610,7 +623,7 @@ def cmd_remote_command(command, parallel, wait=False, server=None, timeout=60, k
         result = remote_cmd(server + '.a8.nl', cmd, username='core', keypath=get_keypaths())
 
         if result:
-            print_sshcmd_remote_command_result(result)
+            print_sshcmd_remote_command_result(server, result)
 
 
 def cmd_reset(commandline, wait=None):
@@ -644,8 +657,6 @@ def cmd_reset(commandline, wait=None):
             cmd = "sudo cp /tmp/vagrantfile-user-data /var/lib/coreos-vagrant/vagrantfile-user-data"
             remote_cmd(name + '.a8.nl', cmd, username='core', keypath=get_keypaths())
             info(name, "uploaded config rebooting now")
-
-
             logpath = path.join(os.getcwd(), "logs/" + name + "-serial.txt")
 
             if path.exists(path.dirname(logpath)):
@@ -739,7 +750,14 @@ def cmd_sshcmd(commandline):
     else:
         cmd = commandline.args[0]
     try:
-        cmd_remote_command(cmd, commandline.parallel, timeout=5, keypath=get_keypaths())
+        server = None
+
+        if ":" in cmd:
+            cmds = cmd.split(":")
+            server = cmds[0]
+            cmd = cmds[1]
+
+        cmd_remote_command(cmd, commandline.parallel, wait=commandline.wait, server=server, timeout=5, keypath=get_keypaths())
     except socket.timeout as ex:
         abort("sshcmd: " + commandline.args[0], "exception -> " + str(ex))
 
@@ -1125,8 +1143,6 @@ def get_vm_names(retry=False):
             return l
 
         vmnames = []
-        numinstances = None
-
         numinstances = get_num_instances()
         osx = is_osx()
 
@@ -1135,7 +1151,6 @@ def get_vm_names(retry=False):
                 vmnames.append(["core" + str(i), None])
             else:
                 vmnames.append(["node" + str(i), None])
-
 
         if numinstances is None:
             v = vagrant.Vagrant()
@@ -1469,16 +1484,17 @@ def print_ctl_cmd(name, systemcmd, shouldhaveword):
             groupinfo.add(service[0], "".join(service[1:]))
 
 
-def print_sshcmd_remote_command_result(result, lastoutput=""):
+def print_sshcmd_remote_command_result(server, result, lastoutput=""):
     """
+    @type server: str, unicode
     @type result: str, unicode
     @type lastoutput: str
     @return: None
     """
     if result != lastoutput:
-        console(result, color="darkyellow", plainprint=True)
+        console(str(server) + ":", result.strip(), color="blue", plainprint=True)
     else:
-        console("same", color="darkyellow", plainprint=True)
+        console(str(server) + ":", "same", color="black", plainprint=True)
 
     return result
 

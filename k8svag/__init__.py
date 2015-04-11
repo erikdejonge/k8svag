@@ -1555,7 +1555,12 @@ def set_gateway_and_coreostoken(commandline):
     """
     default_gateway = get_default_gateway()
     if default_gateway is None:
-        abort(commandline.command, "default gateway could not be found")
+        warning(commandline.command, "default gateway could not be found")
+        if query_yes_no("use 127"):
+            to_file("config/gateway.txt", "127.0.0.1")
+        else:
+            abort("abort", "no gateway")
+
     else:
         info(commandline.command, "default gateway: " + default_gateway)
         to_file("config/gateway.txt", default_gateway)

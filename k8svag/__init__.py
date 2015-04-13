@@ -469,7 +469,7 @@ def cmd_kubectl(commandline):
             if len(restargs) == 0:
                 info("get options", "Possible resources include\n- pods (po)\n- replication controllers (rc)\n- services (svc)\n- minions (mi)\n- events (ev)")
                 execute = False
-
+            kubectl += " --output=yaml "
             kubectl += " ".join(restargs)
         elif kubectlcmd == "delete":
             if len(restargs) == 0:

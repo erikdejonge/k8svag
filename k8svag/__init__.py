@@ -492,12 +492,15 @@ def cmd_kubectl(commandline):
                 kubectl += " ".join(restargs)
 
         elif kubectlcmd == "deleteall":
+            kubectl += "delete services,replicationControllers,pods --all"
+            kubectl = kubectl.replace("deleteall", "")
 
 
-
-            kubectl += " delete pods,services,replicationControllers --all"
+        elif kubectlcmd == "delete":
+            kubectl += "delete "
+            kubectl += " ".join(restargs)
+            kubectl += " --all"
             print(kubectl)
-            return
         elif kubectlcmd == "version":
             execute = cmd_version(commandline, kubectl)
 

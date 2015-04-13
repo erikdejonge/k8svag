@@ -13,6 +13,8 @@ k8svag status
 ```
 
 ##Output
+![overview](res/overview.png)
+
 ```bash
 Active8 => CoreOS Vagrant Kubernetes Cluster
 status: project 'kubetest1' found in '.../test/kubetest1'

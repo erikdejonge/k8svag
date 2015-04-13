@@ -354,7 +354,6 @@ def cmd_driver_vagrant(commandline):
         if commandline.command not in ["createproject"]:
             project_displayname += ": \033[94m" + os.path.dirname(os.getcwd()) + "/" + name + "\033[0m"
 
-
     console(project_displayname, plaintext=True, color="green")
 
     if commandline.wait and commandline.wait > 10 and commandline.force is False:
@@ -471,8 +470,27 @@ def cmd_kubectl(commandline):
                 info("get options", "Possible resources include\n- pods (po)\n- replication controllers (rc)\n- services (svc)\n- minions (mi)\n- events (ev)")
                 execute = False
 
-            # kubectl += " --output=yaml "
-            kubectl += " ".join(restargs)
+            all = False
+
+            for i in restargs:
+                resources = {'rc': 'replication controllers',
+                             'mi': 'minions',
+                             'po': 'pods',
+                             'svc': 'services'}
+
+                reskeys = sorted(resources.keys())
+
+                if i == "all":
+                    execute = False
+                    all = True
+
+                    for k in reskeys:
+                        kubectl1 = kubectl + k
+                        code, retval = cmd_exec(kubectl1, cmdtoprint="\n\033[95m== " + resources[k].capitalize() + " ==\033[0m", myfilter=filterkubectllog)
+
+            if all is False:
+                kubectl += " ".join(restargs)
+
         elif kubectlcmd == "delete":
             if len(restargs) == 0:
                 info("delete options", "delete FILENAME/POD | delete name")
@@ -627,14 +645,8 @@ def cmd_remote_command(command, parallel, wait=0, server=None, timeout=60, keypa
                             time.sleep(float(wait))
 
             if len(commands) > 0:
-                # workers = cpu_count()
-                # if workers > len(commands):
-                #    workers = len(commands)
-                # expool = Pool(workers + 1)
                 with concurrent.futures.ProcessPoolExecutor(max_workers=8) as executor:
                     result = executor.map(remote_cmd_map, commands)
-
-                    # result = expool.map(remote_cmd_map, commands)
                     lastoutput = ""
 
                     for server, result in result:
@@ -664,7 +676,8 @@ def cmd_remote_command_print_result(server, result, lastoutput=""):
 
     server = "results " + server
     if result != lastoutput:
-        console(str(server) + ":", result, color="blue", plainprint=True)
+        console(str(server), color="blue", plainprint=True, newline=False)
+        print(result)
     else:
         console(str(server) + ":", "same", color="black", plainprint=True)
 
@@ -750,6 +763,7 @@ def cmd_restart_vmware(commandline):
                     time.sleep(1)
                     os.system("sudo /usr/bin/vmware-networks --start")
                     time.sleep(2)
+
                 if cnt > 6:
                     break
             else:

@@ -24,7 +24,7 @@ from os import path
 from tempfile import NamedTemporaryFile
 from arguments import Use, abort, Schema, abspath, BaseArguments, delete_directory
 from cmdssh import shell, cmd_run, scp_run, cmd_exec, download, remote_cmd, invoke_shell, remote_cmd_map, CallCommandException
-from consoleprinter import Info, info, console, doinput, warning, clear_screen, query_yes_no, console_warning, console_exception, console_error_exit
+from consoleprinter import Info, info, console, doinput, warning, clear_screen, query_yes_no, console_warning, console_exception, colorize_for_print, console_error_exit
 
 
 class VagrantArguments(BaseArguments):
@@ -482,23 +482,24 @@ def cmd_kubectl(commandline):
                 kubectl += "-f "
                 kubectl += restarg
             else:
-                kubectl += "replicationControllers -l name="
-                kubectl += restarg
-                code, retval = cmd_exec(kubectl, cmdtoprint=kubectl, filter=filterkubectllog)
+                kubectl1 = kubectl + " replicationControllers -l name="
+                kubectl1 += restarg
+                info("delete", kubectl1)
+                code, retval = cmd_exec(kubectl1, cmdtoprint=kubectl1, filter=filterkubectllog)
                 if code != 0:
                     abort(code, retval)
+
                 kubectl += "pods,services -l name="
                 kubectl += restarg
-
-
-
+                info("delete", kubectl)
+                return
         elif kubectlcmd == "version":
             execute = cmd_version(commandline, kubectl)
 
         if execute is True:
-
             code, _ = cmd_exec(kubectl, cmdtoprint=kubectl, filter=filterkubectllog)
-            if code==0:
+
+            if code == 0:
                 info(kubectlcmd, "ok")
 
     elif len(commandline.args) == 0:
@@ -808,34 +809,39 @@ def cmd_statuscluster(commandline):
     @type commandline: VagrantArguments
     @return: None
     """
+    clear_screen()
     vmnames = get_vm_names()
 
     if len(vmnames) > 0:
         for name in vmnames:
             cmd = "vagrant ssh-config " + name
             try:
+                out = ""
+
                 if path.exists(".cl/" + name + ".statuscluster"):
                     out = open(".cl/" + name + ".statuscluster").read()
-                else:
-                    out = cmd_run(cmd, returnoutput=True)
-                    out = out.strip()
 
-                    if len(out) == 0:
-                        open(".cl/" + name + ".statuscluster", "w").write(out)
+                if len(out.strip()) == 0:
+                    out = cmd_run(cmd, streamoutput=False, returnoutput=True)
+                    out = out.strip()
+                    open(".cl/" + name + ".statuscluster", "wt").write(out)
 
                 res = ""
 
                 for row in out.split("\n"):
                     if "HostName" in row:
                         res = row.replace("HostName", "").strip()
+                        res = "\033[31m" + res + "\033[0m"
 
                 result = remote_cmd(name + '.a8.nl', 'cat /etc/os-release|grep VERSION_ID', username="core", keypath=get_keypaths())
 
                 if len(result.strip()) > 0:
-                    info(commandline.command, " ".join([name, res.strip(), "up", result.lower().strip()]))
-                    print_ctl_cmd(name, "systemctl list-units", "kube")
+                    res = " ".join([name, res.strip()])
+                    res = " ".join([res, "up", result.lower().strip()])
+                    info(commandline.command, colorize_for_print(res))
+                    print_ctl_cmd(name, "systemctl list-units", ["kube", "docker", "flannel", "etcd", "fleet"])
                 else:
-                    info(commandline.command, name + " down")
+                    print(colorize_for_print(name + " down"))
 
                 print()
             except subprocess.CalledProcessError as cpex:
@@ -1152,7 +1158,7 @@ def get_vm_configs():
         vmnames = []
 
         for vm in status:
-            vmname = vm.name.split(" ")[0].strip()
+            vmname = vm.name.split()[0].strip()
             vmnames.append([vmname, v.conf(v.ssh_config(vm_name=vmname))])
 
         if len(vmnames) > 0:
@@ -1198,7 +1204,7 @@ def get_vm_names(retry=False):
             status = v.status()
 
             for vm in status:
-                vmname = vm.name.split(" ")[0].strip()
+                vmname = vm.name.split()[0].strip()
                 vmnames.append([vmname, v.conf(v.ssh_config(vm_name=vmname))])
 
         if len(vmnames) > 0:
@@ -1509,15 +1515,20 @@ def print_ctl_cmd(name, systemcmd, shouldhaveword):
     """
     @type name: str
     @type systemcmd: str
-    @type shouldhaveword: str
+    @type shouldhaveword: list
     @return: None
     """
-    kunits = []
+    kunits = set()
 
     for line in remote_cmd(name + '.a8.nl', systemcmd, "core", keypath=get_keypaths()).split("\n"):
-        if shouldhaveword in line:
-            kunits.append(line)
-
+        for word in line.split():
+            for sw in shouldhaveword:
+                if sw in word:
+                    if ".service" in line:
+                        kunits.add(line)
+                        break
+    kunits = list(kunits)
+    kunits.sort(key=lambda x: x.split()[0])
     with Info(systemcmd) as groupinfo:
         for line in kunits:
             servicesplit = line.split(".service")

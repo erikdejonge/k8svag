@@ -469,7 +469,8 @@ def cmd_kubectl(commandline):
             if len(restargs) == 0:
                 info("get options", "Possible resources include\n- pods (po)\n- replication controllers (rc)\n- services (svc)\n- minions (mi)\n- events (ev)")
                 execute = False
-            kubectl += " --output=yaml "
+
+            # kubectl += " --output=yaml "
             kubectl += " ".join(restargs)
         elif kubectlcmd == "delete":
             if len(restargs) == 0:
@@ -485,7 +486,7 @@ def cmd_kubectl(commandline):
                 kubectl1 = kubectl + " replicationControllers -l name="
                 kubectl1 += restarg
                 info("delete", kubectl1)
-                code, retval = cmd_exec(kubectl1, cmdtoprint=kubectl1, filter=filterkubectllog)
+                code, retval = cmd_exec(kubectl1, cmdtoprint=kubectl1, myfilter=filterkubectllog)
                 if code != 0:
                     abort(code, retval)
 
@@ -493,11 +494,12 @@ def cmd_kubectl(commandline):
                 kubectl += restarg
                 info("delete", kubectl)
                 return
+
         elif kubectlcmd == "version":
             execute = cmd_version(commandline, kubectl)
 
         if execute is True:
-            code, _ = cmd_exec(kubectl, cmdtoprint=kubectl, filter=filterkubectllog)
+            code, _ = cmd_exec(kubectl, cmdtoprint=kubectl, myfilter=filterkubectllog)
 
             if code == 0:
                 info(kubectlcmd, "ok")
@@ -1527,8 +1529,10 @@ def print_ctl_cmd(name, systemcmd, shouldhaveword):
                     if ".service" in line:
                         kunits.add(line)
                         break
+
     kunits = list(kunits)
     kunits.sort(key=lambda x: x.split()[0])
+
     with Info(systemcmd) as groupinfo:
         for line in kunits:
             servicesplit = line.split(".service")

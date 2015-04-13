@@ -491,33 +491,18 @@ def cmd_kubectl(commandline):
             if all is False:
                 kubectl += " ".join(restargs)
 
-        elif kubectlcmd == "delete":
-            if len(restargs) == 0:
-                info("delete options", "delete FILENAME/POD | delete name")
-                execute = False
+        elif kubectlcmd == "deleteall":
 
-            restarg = "".join(restargs)
 
-            if os.path.exists(restarg):
-                kubectl += "-f "
-                kubectl += restarg
-            else:
-                kubectl1 = kubectl + " replicationControllers -l name="
-                kubectl1 += restarg
-                info("delete", kubectl1)
-                code, retval = cmd_exec(kubectl1, cmdtoprint=kubectl1, myfilter=filterkubectllog)
-                if code != 0:
-                    abort(code, retval)
 
-                kubectl += "pods,services -l name="
-                kubectl += restarg
-                info("delete", kubectl)
-                return
-
+            kubectl += " delete pods,services,replicationControllers --all"
+            print(kubectl)
+            return
         elif kubectlcmd == "version":
             execute = cmd_version(commandline, kubectl)
 
         if execute is True:
+
             code, _ = cmd_exec(kubectl, cmdtoprint=kubectl, myfilter=filterkubectllog)
 
             if code == 0:

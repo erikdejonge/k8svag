@@ -293,6 +293,7 @@ def cmd_createproject_driver(commandline, name, project_found):
             shutil.rmtree(str(commandline.workingdir))
 
         warning(commandline.command, str(be))
+
         if not isinstance(be, KeyboardInterrupt):
             raise
 
@@ -428,6 +429,7 @@ def cmd_kubectl(commandline):
     if not os.access(kubectl, os.X_OK):
         info("make-exec", kubectl)
         os.chmod(kubectl, stat.S_IREAD | stat.S_IWRITE | stat.S_IEXEC)
+
     kubectl += " --server="
     vmhostosx = is_osx()
 
@@ -480,19 +482,24 @@ def cmd_kubectl(commandline):
                 kubectl += "-f "
                 kubectl += restarg
             else:
+                kubectl += "replicationControllers -l name="
+                kubectl += restarg
+                code, retval = cmd_exec(kubectl, cmdtoprint=kubectl, filter=filterkubectllog)
+                if code != 0:
+                    abort(code, retval)
                 kubectl += "pods,services -l name="
                 kubectl += restarg
+
+
 
         elif kubectlcmd == "version":
             execute = cmd_version(commandline, kubectl)
 
         if execute is True:
+
             code, _ = cmd_exec(kubectl, cmdtoprint=kubectl, filter=filterkubectllog)
-
-
-
-
-
+            if code==0:
+                info(kubectlcmd, "ok")
 
     elif len(commandline.args) == 0:
         warning(commandline.command, "no arguments given, options:\n- create\n- delete\n- get\n- version")
@@ -1556,11 +1563,11 @@ def set_gateway_and_coreostoken(commandline):
     default_gateway = get_default_gateway()
     if default_gateway is None:
         warning(commandline.command, "default gateway could not be found")
+
         if query_yes_no("use 127"):
             to_file("config/gateway.txt", "127.0.0.1")
         else:
             abort("abort", "no gateway")
-
     else:
         info(commandline.command, "default gateway: " + default_gateway)
         to_file("config/gateway.txt", default_gateway)

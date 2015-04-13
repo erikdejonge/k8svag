@@ -49,7 +49,8 @@ class VagrantArguments(BaseArguments):
         self.wait = 0
         self.projectname = ""
         doc = """
-            Vagrant cluster management
+            Vagrant cluster management by Active8 NL 🇳🇱
+            erik@a8.nl
 
             Usage:
                 k8svag [options] [--] <command> [<projectname>] [<args>...]
@@ -346,14 +347,14 @@ def cmd_driver_vagrant(commandline):
         raise AssertionError("no command set")
 
     project_found, name = get_working_directory(commandline)
-    project_displayname = "CoreOS Vagrant Kubernetes Cluster"
+    project_displayname = "Vagrant Kubernetes Cluster"
     if not project_found and commandline.command != "createproject":
         abort(commandline.command, "A k8svag environment is required.Run 'k8svag createproject' or \nchange to a directory with a 'Vagrantfile' and '.cl' folder in it.")
     else:
         if commandline.command not in ["createproject"]:
-            project_displayname += ": " + os.path.dirname(os.getcwd()) + "/\033[91m" + name + "\033[0m\n  🚀"
+            project_displayname += ": \033[94m" + os.path.dirname(os.getcwd()) + "/" + name + "\033[0m"
 
-    console("Active8", plaintext=True, color="orange", newline=False)
+
     console(project_displayname, plaintext=True, color="green")
 
     if commandline.wait and commandline.wait > 10 and commandline.force is False:
@@ -749,6 +750,8 @@ def cmd_restart_vmware(commandline):
                     time.sleep(1)
                     os.system("sudo /usr/bin/vmware-networks --start")
                     time.sleep(2)
+                if cnt > 6:
+                    break
             else:
                 if osx:
                     cmd_run("sudo vmnet-cli --stop")
@@ -760,7 +763,7 @@ def cmd_restart_vmware(commandline):
                     time.sleep(1)
                     cmd_run("sudo /usr/bin/vmware-networks --start")
                     time.sleep(2)
-            break
+                break
         except CallCommandException as ex:
             warning(commandline.command, str(ex) + " attempt " + str(cnt))
 

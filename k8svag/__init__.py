@@ -437,7 +437,7 @@ def cmd_kubectl(commandline):
         abort(commandline.command, "kubectl not found: " + str(kubectl))
 
     if not os.access(kubectl, os.X_OK):
-        info("make-exec", kubectl)
+        info("cmd_kubectl:chmod:exec", kubectl)
         os.chmod(kubectl, stat.S_IREAD | stat.S_IWRITE | stat.S_IEXEC)
 
     kubectl += " --server="

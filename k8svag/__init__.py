@@ -140,6 +140,9 @@ def cmd_ansible(commandline):
     password = None
 
     for serverplaybook in commandline.args:
+        if ":" not in serverplaybook:
+            serverplaybook = "all:" + serverplaybook
+
         spb = serverplaybook.split(":")
 
         if len(spb) == 2:
@@ -354,6 +357,8 @@ def cmd_driver_vagrant(commandline):
         if commandline.command not in ["createproject"]:
             project_displayname += ": \033[94m" + os.path.dirname(os.getcwd()) + "/" + name + "\033[0m"
 
+    if commandline.command == "status":
+        clear_screen()
     console(project_displayname, plaintext=True, color="green")
 
     if commandline.wait and commandline.wait > 10 and commandline.force is False:
@@ -379,7 +384,12 @@ def cmd_driver_vagrant(commandline):
     elif commandline.command == "reboot":
         cmd_remote_command("sudo reboot", True, timeout=5, keypath=get_keypaths())
     elif commandline.command == "status":
+        print("\033[91mcluster machines:\033[0m")
         cmd_statuscluster(commandline)
+        print()
+        print("\033[91mkubernetes system:\033[0m")
+        commandline.args = ["get", "all"]
+        cmd_kubectl(commandline)
     elif commandline.command == "reset":
         removelist = ["user-data" + str(x) + ".yml" for x in range(1, get_num_instances() + 1)]
         removelist.extend(["master.yml", "node.yml"])
@@ -484,9 +494,11 @@ def cmd_kubectl(commandline):
                     execute = False
                     all = True
 
-                    for k in reskeys:
+                    for cnt, k in enumerate(reskeys):
                         kubectl1 = kubectl + k
-                        code, retval = cmd_exec(kubectl1, cmdtoprint="\n\033[95m== " + resources[k].capitalize() + " ==\033[0m", myfilter=filterkubectllog)
+                        cmd_exec(kubectl1, cmdtoprint="\033[94m" + resources[k] + ":\033[0m", myfilter=filterkubectllog)
+                        if cnt < len(reskeys) - 1:
+                            print()
 
             if all is False:
                 kubectl += " ".join(restargs)
@@ -494,8 +506,6 @@ def cmd_kubectl(commandline):
         elif kubectlcmd == "deleteall":
             kubectl += "delete services,replicationControllers,pods --all"
             kubectl = kubectl.replace("deleteall", "")
-
-
         elif kubectlcmd == "delete":
             kubectl += "delete "
             kubectl += " ".join(restargs)
@@ -505,7 +515,6 @@ def cmd_kubectl(commandline):
             execute = cmd_version(commandline, kubectl)
 
         if execute is True:
-
             code, _ = cmd_exec(kubectl, cmdtoprint=kubectl, myfilter=filterkubectllog)
 
             if code == 0:
@@ -816,11 +825,11 @@ def cmd_statuscluster(commandline):
     @type commandline: VagrantArguments
     @return: None
     """
-    clear_screen()
+
     vmnames = get_vm_names()
 
     if len(vmnames) > 0:
-        for name in vmnames:
+        for cnt, name in enumerate(vmnames):
             cmd = "vagrant ssh-config " + name
             try:
                 out = ""
@@ -846,11 +855,11 @@ def cmd_statuscluster(commandline):
                     res = " ".join([name, res.strip()])
                     res = " ".join([res, "up", result.lower().strip()])
                     info(commandline.command, colorize_for_print(res))
-                    print_ctl_cmd(name, "systemctl list-units", ["kube", "docker", "flannel", "etcd", "fleet"])
+                    print_ctl_cmd(name, "systemctl list-units | sed 's/loaded//' | sed 's/LOAD  //' | sed 's/[\d128-\d255]//g'", ["kube", "docker", "flannel", "etcd", "fleet", "setup-network-environment"])
                 else:
                     print(colorize_for_print(name + " down"))
-
-                print()
+                if cnt < len(vmnames)-1:
+                    print()
             except subprocess.CalledProcessError as cpex:
                 console_exception(cpex)
     else:
@@ -1526,8 +1535,12 @@ def print_ctl_cmd(name, systemcmd, shouldhaveword):
     @return: None
     """
     kunits = set()
+    header = None
 
     for line in remote_cmd(name + '.a8.nl', systemcmd, "core", keypath=get_keypaths()).split("\n"):
+        if header is None:
+            header = line
+
         for word in line.split():
             for sw in shouldhaveword:
                 if sw in word:
@@ -1541,8 +1554,8 @@ def print_ctl_cmd(name, systemcmd, shouldhaveword):
     with Info(systemcmd) as groupinfo:
         for line in kunits:
             servicesplit = line.split(".service")
-            service = [x.strip() for x in servicesplit]
-            groupinfo.add(service[0], "".join(service[1:]))
+            service = [x.strip().replace("   ", " ") for x in servicesplit]
+            groupinfo.add(service[0], " ".join(service[1:]))
 
 
 def run_commandline(parent=None):

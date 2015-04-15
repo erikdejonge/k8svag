@@ -3,8 +3,8 @@
 """
 Cluster management tool for setting up a coreos-vagrant cluster
 """
-
 from __future__ import division, print_function, absolute_import, unicode_literals
+
 import os
 import re
 import json
@@ -34,6 +34,7 @@ class VagrantArguments(BaseArguments):
     def __init__(self, parent=None):
         """
         @type parent: str, None
+
         @return: None
         """
         self.force = False
@@ -51,16 +52,18 @@ class VagrantArguments(BaseArguments):
         doc = """
             Vagrant cluster management by Active8 NL 🇳🇱
             erik@a8.nl
+
             Usage:
                 k8svag [options] [--] <command> [<projectname>] [<args>...]
+
             Options:
                 -h --help               Show this screen.
                 -p --parallel           Execute commands in parallel, default is serial execution
                 -v --verbose            Verbose mode.
                 -f --force              Do not ask for confirmation
-
                 -w --wait=<ws>          Wait <ws> seconds between commands.
                 -d --workingdir=<wrkd>  Directory to execute commands in, default is current working dir.
+
             Commands:
                 ansible        Provision cluster with ansible-playbook(s) [(<labelservers>:<nameplaybook>) ..]
                 baseprovision  Apply configuration, createproject calls this.
@@ -70,12 +73,10 @@ class VagrantArguments(BaseArguments):
                 kubectl        kubectl command [kubectl [<args>...]]
                 reboot         Reboot the cluster
                 reset          Reset cloudconfig settings and replace on cluster, reboots cluster
-
                 restartvmware  Start or restart vmware
                 ssh            Make ssh connection into specific machine
                 sshcmd         Execute command on cluster (remote command)
                 status         Status of cluster or machine
-
                 up             Bring cluster up
         """
         self.validcommands = ['ansible', 'baseprovision', 'coreostoken', 'createproject', 'destroy', 'halt', 'kubectl', 'reload', 'reset', 'ssh', 'sshcmd', 'status', 'reboot', 'restartvmware', 'up']
@@ -111,7 +112,6 @@ class VagrantArguments(BaseArguments):
 def bool_to_text(inputbool):
     """
     @type inputbool: bool
-
     @return: None
     """
     if inputbool is True:
@@ -123,9 +123,7 @@ def bool_to_text(inputbool):
 def cat(fpath, mode="rt"):
     """
     @type fpath: str
-
     @type mode: str
-
     @return: None
     """
     with open(fpath, mode) as f:
@@ -135,7 +133,6 @@ def cat(fpath, mode="rt"):
 def cmd_ansible(commandline):
     """
     @type commandline: VagrantArguments
-
     @return: None
     """
     playbook = None
@@ -171,9 +168,7 @@ def cmd_ansible(commandline):
 def cmd_baseprovision(commandline, provider):
     """
     @type commandline: VagrantArguments
-
     @type provider: str
-
     @return: None
     """
     try:
@@ -195,7 +190,6 @@ def cmd_baseprovision(commandline, provider):
 def cmd_connect_ssh(server):
     """
     @type server: str
-
     @return: None
     """
     cnt = 0
@@ -268,7 +262,6 @@ def cmd_connect_ssh(server):
 def cmd_createproject(commandline):
     """
     @type commandline: VagrantArguments
-
     @return: None
     """
     gui, numinstance, memory, numcpu, name, deletefiles = input_vagrant_parameters(commandline)
@@ -288,11 +281,8 @@ def cmd_createproject(commandline):
 def cmd_createproject_driver(commandline, name, project_found):
     """
     @type commandline: VagrantArguments
-
     @type name: str
-
     @type project_found: str
-
     @return: None
     """
     if project_found:
@@ -343,7 +333,6 @@ def cmd_destroy_vagrant_cluster():
 def cmd_driver_vagrant(commandline):
     """
     @type commandline: VagrantArguments
-
     @return: None
     """
     if hasattr(commandline, "help") and commandline.help is True:
@@ -426,7 +415,6 @@ def cmd_driver_vagrant(commandline):
 def cmd_kubectl(commandline):
     """
     @type commandline: VagrantArguments
-
     @return: None
     """
     machine = platform.machine()
@@ -462,7 +450,6 @@ def cmd_kubectl(commandline):
     def filterkubectllog(s):
         """
         @type s: str
-
         @return: None
         """
         sp = s.split("]")
@@ -550,11 +537,8 @@ def cmd_print_coreos_token_stdout():
 def cmd_provision_ansible(targetvmname, playbook, password):
     """
     @type targetvmname: str
-
     @type playbook: str
-
     @type password: str, None
-
     @return: None
     """
     info("provision_ansible", targetvmname + ":" + playbook)
@@ -597,17 +581,11 @@ def cmd_provision_ansible(targetvmname, playbook, password):
 def cmd_remote_command(command, parallel, wait=0, server=None, timeout=60, keypath=None):
     """
     @type command: str
-
     @type parallel: bool
-
     @type wait: int
-
     @type server: None, str
-
     @type timeout: int
-
     @type keypath: None, str
-
     @return: None
     """
     cmdinfo = str(command)
@@ -683,11 +661,8 @@ def cmd_remote_command(command, parallel, wait=0, server=None, timeout=60, keypa
 def cmd_remote_command_print_result(server, result, lastoutput=""):
     """
     @type server: str, unicode
-
     @type result: str, unicode
-
     @type lastoutput: str
-
     @return: None
     """
     result = result.strip()
@@ -708,9 +683,7 @@ def cmd_remote_command_print_result(server, result, lastoutput=""):
 def cmd_reset(commandline, wait=None):
     """
     @type commandline: VagrantArguments
-
     @type wait: str, None
-
     @return: None
     """
     vmhostosx = is_osx()
@@ -765,7 +738,6 @@ def cmd_reset(commandline, wait=None):
 def cmd_restart_vmware(commandline):
     """
     @type commandline: VagrantArguments
-
     @return: None
     """
     osx = is_osx()
@@ -807,7 +779,6 @@ def cmd_restart_vmware(commandline):
 def cmd_ssh(commandline):
     """
     @type commandline: VagrantArguments
-
     @return: None
     """
     server = None
@@ -825,7 +796,6 @@ def cmd_ssh(commandline):
 def cmd_sshcmd(commandline):
     """
     @type commandline: VagrantArguments
-
     @return: None
     """
     cmd = None
@@ -850,7 +820,6 @@ def cmd_sshcmd(commandline):
 def cmd_statuscluster(commandline):
     """
     @type commandline: VagrantArguments
-
     @return: None
     """
     vmnames = get_vm_names()
@@ -896,9 +865,7 @@ def cmd_statuscluster(commandline):
 def cmd_up(commandline, provider):
     """
     @type commandline: VagrantArguments
-
     @type provider: str
-
     @return: None
     """
     curr_gw = get_default_gateway()
@@ -920,9 +887,7 @@ def cmd_up(commandline, provider):
 def cmd_version(commandline, kubectl):
     """
     @type commandline: VagrantArguments
-
     @type kubectl: str
-
     @return: None
     """
     ka = kubectl
@@ -959,15 +924,10 @@ def cmd_version(commandline, kubectl):
 def configure_generic_cluster_files_for_this_machine(commandline, gui, numinstance, memory, numcpu):
     """
     @type commandline: VagrantArguments
-
     @type gui: int
-
     @type numinstance: int
-
     @type memory: int
-
     @type numcpu: int
-
     @return: None
     """
     if not hasattr(commandline, "workingdir"):
@@ -1035,9 +995,7 @@ def configure_generic_cluster_files_for_this_machine(commandline, gui, numinstan
 def cp(fpathin, fpathout):
     """
     @type fpathin: str
-
     @type fpathout: str
-
     @return: None
     """
     shutil.copyfile(fpathin, fpathout)
@@ -1046,7 +1004,6 @@ def cp(fpathin, fpathout):
 def download_and_unzip_k8svagrant_project(commandline):
     """
     @type commandline: VagrantArguments
-
     @return: None
     """
     info(commandline.command, "downloading latest version of k8s/coreos for vagrant")
@@ -1083,9 +1040,7 @@ def download_and_unzip_k8svagrant_project(commandline):
 def echo(content, fpathout):
     """
     @type content: str
-
     @type fpathout: str
-
     @return: None
     """
     to_file(fpathout, content)
@@ -1094,11 +1049,8 @@ def echo(content, fpathout):
 def ensure_project_folder(commandline, name, deletefiles):
     """
     @type commandline: VagrantArguments
-
     @type name: str
-
     @type deletefiles: bool
-
     @return: None
     """
     if not os.path.exists(name):
@@ -1122,11 +1074,8 @@ def ensure_project_folder(commandline, name, deletefiles):
 def generate_keypair(cmdname, comment, privatekeypath):
     """
     @type cmdname: str
-
     @type comment: str
-
     @type privatekeypath: str
-
     @return: None
     """
     info(cmdname, "make key " + privatekeypath)
@@ -1231,7 +1180,6 @@ def get_vm_configs():
 def get_vm_names(retry=False):
     """
     @type retry: str, unicode
-
     @return: None
     """
     try:
@@ -1282,7 +1230,6 @@ def get_vm_names(retry=False):
 def get_working_directory(commandline):
     """
     @type commandline: VagrantArguments
-
     @return: None
     """
     tname = commandline.projectname
@@ -1345,19 +1292,12 @@ def host_osx():
 def input_vagrant_parameters(commandline, numcpus=8, gui=False, instances=4, memory=2048, confirmed=False, deleteoldfiles=False):
     """
     @type commandline: VagrantArguments
-
     @type numcpus : int
-
     @type gui : bool
-
     @type instances : int
-
     @type memory : int
-
     @type confirmed : bool
-
     @type deleteoldfiles : bool
-
     @return: None
     """
     name = commandline.projectname
@@ -1422,9 +1362,7 @@ def is_osx():
 def localize_config(commandline, vmhostosx):
     """
     @type commandline: VagrantArguments
-
     @type vmhostosx: bool
-
     @return: None
     """
     cmd_run('rm -Rf ".cl"')
@@ -1514,7 +1452,6 @@ def main():
 def prepare_config(func_extra_config=None):
     """
     @type func_extra_config: str, unicode, None
-
     @return: None
     """
     vmhostosx = host_osx()
@@ -1554,19 +1491,12 @@ def prepare_config(func_extra_config=None):
 def print_config(commandline, deleteoldfiles, gui, instances, memory, name, numcpus):
     """
     @type commandline: VagrantArguments
-
     @type deleteoldfiles: bool
-
     @type gui: bool
-
     @type instances: int
-
     @type memory: int
-
     @type name: str
-
     @type numcpus: int
-
     @return: None
     """
     print()
@@ -1584,11 +1514,8 @@ def print_config(commandline, deleteoldfiles, gui, instances, memory, name, numc
 def print_ctl_cmd(name, systemcmd, shouldhaveword):
     """
     @type name: str
-
     @type systemcmd: str
-
     @type shouldhaveword: list
-
     @return: None
     """
     kunits = set()
@@ -1616,7 +1543,6 @@ def print_ctl_cmd(name, systemcmd, shouldhaveword):
 def run_commandline(parent=None):
     """
     @type parent: Arguments, None
-
     @return: None
     """
     commandline = VagrantArguments(parent)
@@ -1626,11 +1552,8 @@ def run_commandline(parent=None):
 def sed(oldstr, newstr, infile):
     """
     @type oldstr: str
-
     @type newstr: str
-
     @type infile: str
-
     @return: None
     """
     linelist = []
@@ -1649,7 +1572,6 @@ def sed(oldstr, newstr, infile):
 def set_gateway_and_coreostoken(commandline):
     """
     @type commandline: VagrantArguments
-
     @return: None
     """
     default_gateway = get_default_gateway()
@@ -1680,9 +1602,7 @@ def set_gateway_and_coreostoken(commandline):
 def set_working_dir(commandline, projectname):
     """
     @type commandline: VagrantArguments
-
     @type projectname: str
-
     @return: None
     """
     if commandline.workingdir is None:
@@ -1711,11 +1631,8 @@ def set_working_dir(commandline, projectname):
 def to_file(fpath, txt, mode="wt"):
     """
     @type fpath: str
-
     @type txt: str
-
     @type mode: str
-
     @return: None
     """
     with open(fpath, mode) as f:
@@ -1725,7 +1642,6 @@ def to_file(fpath, txt, mode="wt"):
 def unzip(source_filename):
     """
     @type source_filename: str
-
     @return: None
     """
     dest_dir = os.getcwd()
@@ -1755,11 +1671,8 @@ def unzip(source_filename):
 def write_config_from_template(commandline, ntl, vmhostosx):
     """
     @type commandline: VagrantArguments
-
     @type ntl: str, unicode
-
     @type vmhostosx: bool
-
     @return: None
     """
     node = open(ntl).read()
@@ -1782,7 +1695,6 @@ def write_config_from_template(commandline, ntl, vmhostosx):
 def write_new_tokens(vmhostosx):
     """
     @type vmhostosx: bool
-
     @return: None
     """
     token = get_token()
@@ -1790,7 +1702,6 @@ def write_new_tokens(vmhostosx):
     def tokenpath(arch):
         """
         @type arch: str
-
         @return: None
         """
         cwd = os.getcwd()
@@ -1808,6 +1719,5 @@ def write_new_tokens(vmhostosx):
     else:
         tlin = tokenpath("linux")
         open(tlin, "w").write(token)
-
 if __name__ == "__main__":
     main()

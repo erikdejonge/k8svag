@@ -509,8 +509,6 @@ def cmd_kubectl(commandline):
         elif kubectlcmd == "delete":
             kubectl += "delete "
             kubectl += " ".join(restargs)
-            kubectl += " --all"
-            print(kubectl)
         elif kubectlcmd == "version":
             execute = cmd_version(commandline, kubectl)
 

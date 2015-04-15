@@ -3,8 +3,8 @@
 """
 Cluster management tool for setting up a coreos-vagrant cluster
 """
-from __future__ import division, print_function, absolute_import, unicode_literals
 
+from __future__ import division, print_function, absolute_import, unicode_literals
 import os
 import re
 import json
@@ -309,15 +309,15 @@ def cmd_createproject_driver(commandline, name, project_found):
         if not isinstance(be, KeyboardInterrupt):
             raise
 
-    trycnt = 0
-    while trycnt < 5:
+    try_cnt = 0
+    while try_cnt < 5:
         try:
-            info(commandline.command, "bring up attempt " + str(trycnt + 1))
+            info(commandline.command, "bring up attempt " + str(try_cnt + 1))
             cmd_run("vagrant up")
-            trycnt = 5
+            try_cnt = 5
             break
         except CallCommandException as cce:
-            trycnt += 1
+            try_cnt += 1
             print(cce)
 
 
@@ -1808,5 +1808,6 @@ def write_new_tokens(vmhostosx):
     else:
         tlin = tokenpath("linux")
         open(tlin, "w").write(token)
+
 if __name__ == "__main__":
     main()

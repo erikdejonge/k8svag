@@ -457,9 +457,11 @@ def cmd_kubectl(commandline):
         """
         sp = s.split("]")
 
-        if len(sp) > 0:
+        if len(sp) > 1:
+
             return "]".join(sp[1:])
         else:
+
             return s
 
     if len(commandline.args) > 0:
@@ -471,6 +473,13 @@ def cmd_kubectl(commandline):
         if kubectlcmd == "create":
             if len(restargs) == 0:
                 info("create options", "create FILENAME")
+                execute = False
+
+            kubectl += "-f "
+            kubectl += " ".join(restargs)
+        elif kubectlcmd == "update":
+            if len(restargs) == 0:
+                info("update options", "update FILENAME")
                 execute = False
 
             kubectl += "-f "
@@ -496,7 +505,7 @@ def cmd_kubectl(commandline):
 
                     for cnt, k in enumerate(reskeys):
                         kubectl1 = kubectl + k
-                        cmd_exec(kubectl1, cmdtoprint="\033[94m" + resources[k] + ":\033[0m", myfilter=filterkubectllog)
+`                        cmd_exec(kubectl1, cmdtoprint="\033[94m" + resources[k] + ":\033[0m", myfilter=filterkubectllog)
                         if cnt < len(reskeys) - 1:
                             print()
 

@@ -51,18 +51,16 @@ class VagrantArguments(BaseArguments):
         doc = """
             Vagrant cluster management by Active8 NL 🇳🇱
             erik@a8.nl
-
             Usage:
                 k8svag [options] [--] <command> [<projectname>] [<args>...]
-
             Options:
                 -h --help               Show this screen.
                 -p --parallel           Execute commands in parallel, default is serial execution
                 -v --verbose            Verbose mode.
                 -f --force              Do not ask for confirmation
+
                 -w --wait=<ws>          Wait <ws> seconds between commands.
                 -d --workingdir=<wrkd>  Directory to execute commands in, default is current working dir.
-
             Commands:
                 ansible        Provision cluster with ansible-playbook(s) [(<labelservers>:<nameplaybook>) ..]
                 baseprovision  Apply configuration, createproject calls this.
@@ -72,10 +70,12 @@ class VagrantArguments(BaseArguments):
                 kubectl        kubectl command [kubectl [<args>...]]
                 reboot         Reboot the cluster
                 reset          Reset cloudconfig settings and replace on cluster, reboots cluster
+
                 restartvmware  Start or restart vmware
                 ssh            Make ssh connection into specific machine
                 sshcmd         Execute command on cluster (remote command)
                 status         Status of cluster or machine
+
                 up             Bring cluster up
         """
         self.validcommands = ['ansible', 'baseprovision', 'coreostoken', 'createproject', 'destroy', 'halt', 'kubectl', 'reload', 'reset', 'ssh', 'sshcmd', 'status', 'reboot', 'restartvmware', 'up']
@@ -84,7 +84,6 @@ class VagrantArguments(BaseArguments):
         self.set_command_help("status", "ssh-config data combined with other data")
         self.set_command_help("ansible", "example: cbx ansible myproject all:myplaybook.yml core1:anotherplaybook.yml")
         self.set_command_help("kubectl", "commands for the kubectl binary [<help|create|get|version|delete|args>..]")
-
         super(VagrantArguments, self).__init__(doc, validateschema, parent=parent)
 
     @property
@@ -112,6 +111,7 @@ class VagrantArguments(BaseArguments):
 def bool_to_text(inputbool):
     """
     @type inputbool: bool
+
     @return: None
     """
     if inputbool is True:
@@ -123,7 +123,9 @@ def bool_to_text(inputbool):
 def cat(fpath, mode="rt"):
     """
     @type fpath: str
+
     @type mode: str
+
     @return: None
     """
     with open(fpath, mode) as f:
@@ -133,12 +135,12 @@ def cat(fpath, mode="rt"):
 def cmd_ansible(commandline):
     """
     @type commandline: VagrantArguments
+
     @return: None
     """
     playbook = None
     server = None
     password = None
-
     for serverplaybook in commandline.args:
         if ":" not in serverplaybook:
             serverplaybook = "all:" + serverplaybook
@@ -169,7 +171,9 @@ def cmd_ansible(commandline):
 def cmd_baseprovision(commandline, provider):
     """
     @type commandline: VagrantArguments
+
     @type provider: str
+
     @return: None
     """
     try:
@@ -191,6 +195,7 @@ def cmd_baseprovision(commandline, provider):
 def cmd_connect_ssh(server):
     """
     @type server: str
+
     @return: None
     """
     cnt = 0
@@ -252,7 +257,6 @@ def cmd_connect_ssh(server):
             if server != 'all':
                 warning("ssh", "server " + server + " not found, options are:")
                 answers = []
-
                 for name in vmnames:
                     answers.append(name)
 
@@ -264,6 +268,7 @@ def cmd_connect_ssh(server):
 def cmd_createproject(commandline):
     """
     @type commandline: VagrantArguments
+
     @return: None
     """
     gui, numinstance, memory, numcpu, name, deletefiles = input_vagrant_parameters(commandline)
@@ -283,8 +288,11 @@ def cmd_createproject(commandline):
 def cmd_createproject_driver(commandline, name, project_found):
     """
     @type commandline: VagrantArguments
+
     @type name: str
+
     @type project_found: str
+
     @return: None
     """
     if project_found:
@@ -318,11 +326,9 @@ def cmd_destroy_vagrant_cluster():
     destroy_vagrant_cluster
     """
     cwd = os.getcwd()
-
     try:
         cmd = "vagrant destroy -f"
         cmd_run(cmd)
-
         for vmx in str(os.popen("vmrun list")):
             if ".vmx" in vmx:
                 vmx = vmx.strip()
@@ -337,6 +343,7 @@ def cmd_destroy_vagrant_cluster():
 def cmd_driver_vagrant(commandline):
     """
     @type commandline: VagrantArguments
+
     @return: None
     """
     if hasattr(commandline, "help") and commandline.help is True:
@@ -359,6 +366,7 @@ def cmd_driver_vagrant(commandline):
 
     if commandline.command == "status":
         clear_screen()
+
     console(project_displayname, plaintext=True, color="green")
 
     if commandline.wait and commandline.wait > 10 and commandline.force is False:
@@ -418,6 +426,7 @@ def cmd_driver_vagrant(commandline):
 def cmd_kubectl(commandline):
     """
     @type commandline: VagrantArguments
+
     @return: None
     """
     machine = platform.machine()
@@ -453,15 +462,14 @@ def cmd_kubectl(commandline):
     def filterkubectllog(s):
         """
         @type s: str
+
         @return: None
         """
         sp = s.split("]")
 
         if len(sp) > 1:
-
             return "]".join(sp[1:])
         else:
-
             return s
 
     if len(commandline.args) > 0:
@@ -490,7 +498,6 @@ def cmd_kubectl(commandline):
                 execute = False
 
             all = False
-
             for i in restargs:
                 resources = {'rc': 'replication controllers',
                              'mi': 'minions',
@@ -502,10 +509,10 @@ def cmd_kubectl(commandline):
                 if i == "all":
                     execute = False
                     all = True
-
                     for cnt, k in enumerate(reskeys):
                         kubectl1 = kubectl + k
                         cmd_exec(kubectl1, cmdtoprint="\033[94m" + resources[k] + ":\033[0m", myfilter=filterkubectllog)
+
                         if cnt < len(reskeys) - 1:
                             print()
 
@@ -543,8 +550,11 @@ def cmd_print_coreos_token_stdout():
 def cmd_provision_ansible(targetvmname, playbook, password):
     """
     @type targetvmname: str
+
     @type playbook: str
+
     @type password: str, None
+
     @return: None
     """
     info("provision_ansible", targetvmname + ":" + playbook)
@@ -587,11 +597,17 @@ def cmd_provision_ansible(targetvmname, playbook, password):
 def cmd_remote_command(command, parallel, wait=0, server=None, timeout=60, keypath=None):
     """
     @type command: str
+
     @type parallel: bool
+
     @type wait: int
+
     @type server: None, str
+
     @type timeout: int
+
     @type keypath: None, str
+
     @return: None
     """
     cmdinfo = str(command)
@@ -621,7 +637,6 @@ def cmd_remote_command(command, parallel, wait=0, server=None, timeout=60, keypa
 
         if command not in vmnames:
             commands = []
-
             for name in vmnames:
                 cmd = command
 
@@ -652,7 +667,6 @@ def cmd_remote_command(command, parallel, wait=0, server=None, timeout=60, keypa
                 with concurrent.futures.ProcessPoolExecutor(max_workers=8) as executor:
                     result = executor.map(remote_cmd_map, commands)
                     lastoutput = ""
-
                     for server, result in result:
                         if result.strip():
                             lastoutput = cmd_remote_command_print_result(server.split(".")[0], result, lastoutput)
@@ -669,8 +683,11 @@ def cmd_remote_command(command, parallel, wait=0, server=None, timeout=60, keypa
 def cmd_remote_command_print_result(server, result, lastoutput=""):
     """
     @type server: str, unicode
+
     @type result: str, unicode
+
     @type lastoutput: str
+
     @return: None
     """
     result = result.strip()
@@ -691,7 +708,9 @@ def cmd_remote_command_print_result(server, result, lastoutput=""):
 def cmd_reset(commandline, wait=None):
     """
     @type commandline: VagrantArguments
+
     @type wait: str, None
+
     @return: None
     """
     vmhostosx = is_osx()
@@ -712,7 +731,6 @@ def cmd_reset(commandline, wait=None):
 
     if len(vmnames) > 0:
         cnt = 1
-
         for name in vmnames:
             info("reset", name + '.a8.nl put configscript')
             scp_run(server=name + '.a8.nl', cmdtype="put", fp1="configscripts/user-data" + str(cnt) + ".yml", fp2="/tmp/vagrantfile-user-data", username="core", keypath=get_keypaths())
@@ -747,10 +765,10 @@ def cmd_reset(commandline, wait=None):
 def cmd_restart_vmware(commandline):
     """
     @type commandline: VagrantArguments
+
     @return: None
     """
     osx = is_osx()
-
     for cnt in range(1, 15):
         try:
             if cnt > 2:
@@ -789,6 +807,7 @@ def cmd_restart_vmware(commandline):
 def cmd_ssh(commandline):
     """
     @type commandline: VagrantArguments
+
     @return: None
     """
     server = None
@@ -806,6 +825,7 @@ def cmd_ssh(commandline):
 def cmd_sshcmd(commandline):
     """
     @type commandline: VagrantArguments
+
     @return: None
     """
     cmd = None
@@ -830,9 +850,9 @@ def cmd_sshcmd(commandline):
 def cmd_statuscluster(commandline):
     """
     @type commandline: VagrantArguments
+
     @return: None
     """
-
     vmnames = get_vm_names()
 
     if len(vmnames) > 0:
@@ -850,7 +870,6 @@ def cmd_statuscluster(commandline):
                     open(".cl/" + name + ".statuscluster", "wt").write(out)
 
                 res = ""
-
                 for row in out.split("\n"):
                     if "HostName" in row:
                         res = row.replace("HostName", "").strip()
@@ -865,7 +884,8 @@ def cmd_statuscluster(commandline):
                     print_ctl_cmd(name, "systemctl list-units | sed 's/loaded//' | sed 's/LOAD  //' | sed 's/[\d128-\d255]//g'", ["kube", "docker", "flannel", "etcd", "fleet", "setup-network-environment"])
                 else:
                     print(colorize_for_print(name + " down"))
-                if cnt < len(vmnames)-1:
+
+                if cnt < len(vmnames) - 1:
                     print()
             except subprocess.CalledProcessError as cpex:
                 console_exception(cpex)
@@ -876,7 +896,9 @@ def cmd_statuscluster(commandline):
 def cmd_up(commandline, provider):
     """
     @type commandline: VagrantArguments
+
     @type provider: str
+
     @return: None
     """
     curr_gw = get_default_gateway()
@@ -898,7 +920,9 @@ def cmd_up(commandline, provider):
 def cmd_version(commandline, kubectl):
     """
     @type commandline: VagrantArguments
+
     @type kubectl: str
+
     @return: None
     """
     ka = kubectl
@@ -935,10 +959,15 @@ def cmd_version(commandline, kubectl):
 def configure_generic_cluster_files_for_this_machine(commandline, gui, numinstance, memory, numcpu):
     """
     @type commandline: VagrantArguments
+
     @type gui: int
+
     @type numinstance: int
+
     @type memory: int
+
     @type numcpu: int
+
     @return: None
     """
     if not hasattr(commandline, "workingdir"):
@@ -971,6 +1000,7 @@ def configure_generic_cluster_files_for_this_machine(commandline, gui, numinstan
     if os.path.exists(mod_extra_config_path):
         try:
             mod_extra_config = __import__(mod_extra_config_path)
+
             if mod_extra_config is not None:
                 func_extra_config = mod_extra_config.__main__
         except ImportError:
@@ -978,10 +1008,10 @@ def configure_generic_cluster_files_for_this_machine(commandline, gui, numinstan
 
     vmhost, provider = prepare_config(func_extra_config)
     info(commandline.command, provider)
+
     if commandline.command in ["createproject", "baseprovision", "reset", "reload", "command"]:
         vfp = open(vagrantfile)
         vf = vfp.read()
-
         vfp.close()
         vf = vf.replace("cpus = x", "cpus = " + str(numcpu))
         vf = vf.replace("cpus = x", "cpus = " + str(numcpu))
@@ -990,7 +1020,6 @@ def configure_generic_cluster_files_for_this_machine(commandline, gui, numinstan
         vf = vf.replace("$vm_gui = x", "$vm_gui = " + str(gui).lower())
         vf = vf.replace("$vm_memory = x", "$vm_memory = " + str(memory))
         vf = vf.replace("$vm_cpus = x", "$vm_cpus = " + str(numcpu))
-
         open(vagrantfile, "w").write(vf)
         ntl = "configscripts/node.tmpl.yml"
         write_config_from_template(commandline, ntl, vmhost)
@@ -1006,7 +1035,9 @@ def configure_generic_cluster_files_for_this_machine(commandline, gui, numinstan
 def cp(fpathin, fpathout):
     """
     @type fpathin: str
+
     @type fpathout: str
+
     @return: None
     """
     shutil.copyfile(fpathin, fpathout)
@@ -1015,6 +1046,7 @@ def cp(fpathin, fpathout):
 def download_and_unzip_k8svagrant_project(commandline):
     """
     @type commandline: VagrantArguments
+
     @return: None
     """
     info(commandline.command, "downloading latest version of k8s/coreos for vagrant")
@@ -1051,7 +1083,9 @@ def download_and_unzip_k8svagrant_project(commandline):
 def echo(content, fpathout):
     """
     @type content: str
+
     @type fpathout: str
+
     @return: None
     """
     to_file(fpathout, content)
@@ -1060,8 +1094,11 @@ def echo(content, fpathout):
 def ensure_project_folder(commandline, name, deletefiles):
     """
     @type commandline: VagrantArguments
+
     @type name: str
+
     @type deletefiles: bool
+
     @return: None
     """
     if not os.path.exists(name):
@@ -1085,8 +1122,11 @@ def ensure_project_folder(commandline, name, deletefiles):
 def generate_keypair(cmdname, comment, privatekeypath):
     """
     @type cmdname: str
+
     @type comment: str
+
     @type privatekeypath: str
+
     @return: None
     """
     info(cmdname, "make key " + privatekeypath)
@@ -1104,7 +1144,6 @@ def get_default_gateway():
     """
     default_gateway = None
     gateways = netifaces.gateways()
-
     for gws in gateways:
         if gws == "default":
             for gw in gateways[gws]:
@@ -1179,7 +1218,6 @@ def get_vm_configs():
         v = vagrant.Vagrant()
         status = v.status()
         vmnames = []
-
         for vm in status:
             vmname = vm.name.split()[0].strip()
             vmnames.append([vmname, v.conf(v.ssh_config(vm_name=vmname))])
@@ -1187,13 +1225,13 @@ def get_vm_configs():
         if len(vmnames) > 0:
             picklepath = os.path.join(cwd, ".cl/vmnames.pickle")
             pickle.dump(vmnames, open(picklepath, "wb"))
-
         return [x[1] for x in vmnames if x[1] is not None]
 
 
 def get_vm_names(retry=False):
     """
     @type retry: str, unicode
+
     @return: None
     """
     try:
@@ -1215,7 +1253,6 @@ def get_vm_names(retry=False):
         vmnames = []
         numinstances = get_num_instances()
         osx = is_osx()
-
         for i in range(1, numinstances + 1):
             if osx is True:
                 vmnames.append(["core" + str(i), None])
@@ -1225,14 +1262,12 @@ def get_vm_names(retry=False):
         if numinstances is None:
             v = vagrant.Vagrant()
             status = v.status()
-
             for vm in status:
                 vmname = vm.name.split()[0].strip()
                 vmnames.append([vmname, v.conf(v.ssh_config(vm_name=vmname))])
 
         if len(vmnames) > 0:
             pickle.dump(vmnames, open(picklepath, "wb"))
-
         l = sorted([x[0] for x in vmnames])
         return l
     except subprocess.CalledProcessError as ex:
@@ -1247,6 +1282,7 @@ def get_vm_names(retry=False):
 def get_working_directory(commandline):
     """
     @type commandline: VagrantArguments
+
     @return: None
     """
     tname = commandline.projectname
@@ -1283,6 +1319,7 @@ def get_working_directory(commandline):
         commandline.workingdir = None
 
     project_found = commandline.workingdir is not None
+
     if project_found is True:
         os.chdir(str(commandline.workingdir))
         retname = os.path.basename(str(commandline.workingdir))
@@ -1308,12 +1345,19 @@ def host_osx():
 def input_vagrant_parameters(commandline, numcpus=8, gui=False, instances=4, memory=2048, confirmed=False, deleteoldfiles=False):
     """
     @type commandline: VagrantArguments
+
     @type numcpus : int
+
     @type gui : bool
+
     @type instances : int
+
     @type memory : int
+
     @type confirmed : bool
+
     @type deleteoldfiles : bool
+
     @return: None
     """
     name = commandline.projectname
@@ -1378,7 +1422,9 @@ def is_osx():
 def localize_config(commandline, vmhostosx):
     """
     @type commandline: VagrantArguments
+
     @type vmhostosx: bool
+
     @return: None
     """
     cmd_run('rm -Rf ".cl"')
@@ -1397,7 +1443,6 @@ def localize_config(commandline, vmhostosx):
     # for cf in get_vm_configs():
     # hosts.write(cf["Host"] + " ansible_ssh_host=" + cf["HostName"] + " ansible_ssh_port=22\n")
     vmnames = get_vm_names()
-
     for name in vmnames:
         try:
             hostip = str(socket.gethostbyname(name + ".a8.nl"))
@@ -1406,14 +1451,12 @@ def localize_config(commandline, vmhostosx):
             hosts.write(name + " ansible_ssh_host=" + name + ".a8.nl ansible_ssh_port=22\n")
 
     hosts.write("\n[masters]\n")
-
     for name in vmnames:
         hosts.write(name + "\n")
         break
 
     cnt = 0
     hosts.write("\n[etcd]\n")
-
     for name in vmnames:
         if cnt == 1:
             hosts.write(name + "\n")
@@ -1422,7 +1465,6 @@ def localize_config(commandline, vmhostosx):
 
     cnt = 0
     hosts.write("\n[nodes]\n")
-
     for name in vmnames:
         if cnt > 0:
             hosts.write(name + "\n")
@@ -1430,20 +1472,17 @@ def localize_config(commandline, vmhostosx):
         cnt += 1
 
     hosts.write("\n[all]\n")
-
     for name in vmnames:
         hosts.write(name + "\n")
 
     hosts.write("\n[all_groups:children]\nmasters\netcd\nnodes\n")
     hosts.write("\n[coreos]\n")
-
     for name in vmnames:
         hosts.write(name + "\n")
 
     hosts.write("\n[coreos:vars]\n")
     hosts.write("ansible_ssh_user=core\n")
     hosts.write("ansible_python_interpreter=\"PATH=/home/core/bin:$PATH python\"\n")
-
     hosts.flush()
     hosts.close()
     cwd = os.getcwd()
@@ -1475,6 +1514,7 @@ def main():
 def prepare_config(func_extra_config=None):
     """
     @type func_extra_config: str, unicode, None
+
     @return: None
     """
     vmhostosx = host_osx()
@@ -1514,12 +1554,19 @@ def prepare_config(func_extra_config=None):
 def print_config(commandline, deleteoldfiles, gui, instances, memory, name, numcpus):
     """
     @type commandline: VagrantArguments
+
     @type deleteoldfiles: bool
+
     @type gui: bool
+
     @type instances: int
+
     @type memory: int
+
     @type name: str
+
     @type numcpus: int
+
     @return: None
     """
     print()
@@ -1537,17 +1584,18 @@ def print_config(commandline, deleteoldfiles, gui, instances, memory, name, numc
 def print_ctl_cmd(name, systemcmd, shouldhaveword):
     """
     @type name: str
+
     @type systemcmd: str
+
     @type shouldhaveword: list
+
     @return: None
     """
     kunits = set()
     header = None
-
     for line in remote_cmd(name + '.a8.nl', systemcmd, "core", keypath=get_keypaths()).split("\n"):
         if header is None:
             header = line
-
         for word in line.split():
             for sw in shouldhaveword:
                 if sw in word:
@@ -1568,6 +1616,7 @@ def print_ctl_cmd(name, systemcmd, shouldhaveword):
 def run_commandline(parent=None):
     """
     @type parent: Arguments, None
+
     @return: None
     """
     commandline = VagrantArguments(parent)
@@ -1577,8 +1626,11 @@ def run_commandline(parent=None):
 def sed(oldstr, newstr, infile):
     """
     @type oldstr: str
+
     @type newstr: str
+
     @type infile: str
+
     @return: None
     """
     linelist = []
@@ -1590,7 +1642,6 @@ def sed(oldstr, newstr, infile):
 
     with open(infile, "w") as f:
         f.truncate()
-
         for line in linelist:
             f.writelines(line)
 
@@ -1598,9 +1649,11 @@ def sed(oldstr, newstr, infile):
 def set_gateway_and_coreostoken(commandline):
     """
     @type commandline: VagrantArguments
+
     @return: None
     """
     default_gateway = get_default_gateway()
+
     if default_gateway is None:
         warning(commandline.command, "default gateway could not be found")
 
@@ -1627,7 +1680,9 @@ def set_gateway_and_coreostoken(commandline):
 def set_working_dir(commandline, projectname):
     """
     @type commandline: VagrantArguments
+
     @type projectname: str
+
     @return: None
     """
     if commandline.workingdir is None:
@@ -1656,8 +1711,11 @@ def set_working_dir(commandline, projectname):
 def to_file(fpath, txt, mode="wt"):
     """
     @type fpath: str
+
     @type txt: str
+
     @type mode: str
+
     @return: None
     """
     with open(fpath, mode) as f:
@@ -1667,6 +1725,7 @@ def to_file(fpath, txt, mode="wt"):
 def unzip(source_filename):
     """
     @type source_filename: str
+
     @return: None
     """
     dest_dir = os.getcwd()
@@ -1696,8 +1755,11 @@ def unzip(source_filename):
 def write_config_from_template(commandline, ntl, vmhostosx):
     """
     @type commandline: VagrantArguments
+
     @type ntl: str, unicode
+
     @type vmhostosx: bool
+
     @return: None
     """
     node = open(ntl).read()
@@ -1720,6 +1782,7 @@ def write_config_from_template(commandline, ntl, vmhostosx):
 def write_new_tokens(vmhostosx):
     """
     @type vmhostosx: bool
+
     @return: None
     """
     token = get_token()
@@ -1727,6 +1790,7 @@ def write_new_tokens(vmhostosx):
     def tokenpath(arch):
         """
         @type arch: str
+
         @return: None
         """
         cwd = os.getcwd()
@@ -1744,7 +1808,5 @@ def write_new_tokens(vmhostosx):
     else:
         tlin = tokenpath("linux")
         open(tlin, "w").write(token)
-
-
 if __name__ == "__main__":
     main()

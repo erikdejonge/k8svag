@@ -34,7 +34,6 @@ class VagrantArguments(BaseArguments):
     def __init__(self, parent=None):
         """
         @type parent: str, None
-
         @return: None
         """
         self.force = False
@@ -85,6 +84,7 @@ class VagrantArguments(BaseArguments):
         self.set_command_help("status", "ssh-config data combined with other data")
         self.set_command_help("ansible", "example: cbx ansible myproject all:myplaybook.yml core1:anotherplaybook.yml")
         self.set_command_help("kubectl", "commands for the kubectl binary [<help|create|get|version|delete|args>..]")
+
         super(VagrantArguments, self).__init__(doc, validateschema, parent=parent)
 
     @property
@@ -138,6 +138,7 @@ def cmd_ansible(commandline):
     playbook = None
     server = None
     password = None
+
     for serverplaybook in commandline.args:
         if ":" not in serverplaybook:
             serverplaybook = "all:" + serverplaybook
@@ -251,6 +252,7 @@ def cmd_connect_ssh(server):
             if server != 'all':
                 warning("ssh", "server " + server + " not found, options are:")
                 answers = []
+
                 for name in vmnames:
                     answers.append(name)
 
@@ -316,9 +318,11 @@ def cmd_destroy_vagrant_cluster():
     destroy_vagrant_cluster
     """
     cwd = os.getcwd()
+
     try:
         cmd = "vagrant destroy -f"
         cmd_run(cmd)
+
         for vmx in str(os.popen("vmrun list")):
             if ".vmx" in vmx:
                 vmx = vmx.strip()
@@ -485,6 +489,7 @@ def cmd_kubectl(commandline):
                 execute = False
 
             all = False
+
             for i in restargs:
                 resources = {'rc': 'replication controllers',
                              'mi': 'minions',
@@ -496,6 +501,7 @@ def cmd_kubectl(commandline):
                 if i == "all":
                     execute = False
                     all = True
+
                     for cnt, k in enumerate(reskeys):
                         kubectl1 = kubectl + k
                         cmd_exec(kubectl1, cmdtoprint="\033[94m" + resources[k] + ":\033[0m", myfilter=filterkubectllog)
@@ -615,6 +621,7 @@ def cmd_remote_command(command, parallel, wait=0, server=None, timeout=60, keypa
 
         if command not in vmnames:
             commands = []
+
             for name in vmnames:
                 cmd = command
 
@@ -645,6 +652,7 @@ def cmd_remote_command(command, parallel, wait=0, server=None, timeout=60, keypa
                 with concurrent.futures.ProcessPoolExecutor(max_workers=8) as executor:
                     result = executor.map(remote_cmd_map, commands)
                     lastoutput = ""
+
                     for server, result in result:
                         if result.strip():
                             lastoutput = cmd_remote_command_print_result(server.split(".")[0], result, lastoutput)
@@ -704,6 +712,7 @@ def cmd_reset(commandline, wait=None):
 
     if len(vmnames) > 0:
         cnt = 1
+
         for name in vmnames:
             info("reset", name + '.a8.nl put configscript')
             scp_run(server=name + '.a8.nl', cmdtype="put", fp1="configscripts/user-data" + str(cnt) + ".yml", fp2="/tmp/vagrantfile-user-data", username="core", keypath=get_keypaths())
@@ -741,6 +750,7 @@ def cmd_restart_vmware(commandline):
     @return: None
     """
     osx = is_osx()
+
     for cnt in range(1, 15):
         try:
             if cnt > 2:
@@ -839,6 +849,7 @@ def cmd_statuscluster(commandline):
                     open(".cl/" + name + ".statuscluster", "wt").write(out)
 
                 res = ""
+
                 for row in out.split("\n"):
                     if "HostName" in row:
                         res = row.replace("HostName", "").strip()
@@ -960,7 +971,6 @@ def configure_generic_cluster_files_for_this_machine(commandline, gui, numinstan
     if os.path.exists(mod_extra_config_path):
         try:
             mod_extra_config = __import__(mod_extra_config_path)
-
             if mod_extra_config is not None:
                 func_extra_config = mod_extra_config.__main__
         except ImportError:
@@ -968,10 +978,10 @@ def configure_generic_cluster_files_for_this_machine(commandline, gui, numinstan
 
     vmhost, provider = prepare_config(func_extra_config)
     info(commandline.command, provider)
-
     if commandline.command in ["createproject", "baseprovision", "reset", "reload", "command"]:
         vfp = open(vagrantfile)
         vf = vfp.read()
+
         vfp.close()
         vf = vf.replace("cpus = x", "cpus = " + str(numcpu))
         vf = vf.replace("cpus = x", "cpus = " + str(numcpu))
@@ -980,11 +990,12 @@ def configure_generic_cluster_files_for_this_machine(commandline, gui, numinstan
         vf = vf.replace("$vm_gui = x", "$vm_gui = " + str(gui).lower())
         vf = vf.replace("$vm_memory = x", "$vm_memory = " + str(memory))
         vf = vf.replace("$vm_cpus = x", "$vm_cpus = " + str(numcpu))
+
         open(vagrantfile, "w").write(vf)
         ntl = "configscripts/node.tmpl.yml"
-        write_config_from_template(commandline, ntl, vmhost)
+        write_config_from_template(commandline, ntl, vmhost, memory, numcpu)
         ntl = "configscripts/master.tmpl.yml"
-        write_config_from_template(commandline, ntl, vmhost)
+        write_config_from_template(commandline, ntl, vmhost, memory, numcpu)
 
     if False is localize_config(commandline, vmhost):
         raise AssertionError("localize_config was False")
@@ -1093,6 +1104,7 @@ def get_default_gateway():
     """
     default_gateway = None
     gateways = netifaces.gateways()
+
     for gws in gateways:
         if gws == "default":
             for gw in gateways[gws]:
@@ -1167,6 +1179,7 @@ def get_vm_configs():
         v = vagrant.Vagrant()
         status = v.status()
         vmnames = []
+
         for vm in status:
             vmname = vm.name.split()[0].strip()
             vmnames.append([vmname, v.conf(v.ssh_config(vm_name=vmname))])
@@ -1174,6 +1187,7 @@ def get_vm_configs():
         if len(vmnames) > 0:
             picklepath = os.path.join(cwd, ".cl/vmnames.pickle")
             pickle.dump(vmnames, open(picklepath, "wb"))
+
         return [x[1] for x in vmnames if x[1] is not None]
 
 
@@ -1201,6 +1215,7 @@ def get_vm_names(retry=False):
         vmnames = []
         numinstances = get_num_instances()
         osx = is_osx()
+
         for i in range(1, numinstances + 1):
             if osx is True:
                 vmnames.append(["core" + str(i), None])
@@ -1210,12 +1225,14 @@ def get_vm_names(retry=False):
         if numinstances is None:
             v = vagrant.Vagrant()
             status = v.status()
+
             for vm in status:
                 vmname = vm.name.split()[0].strip()
                 vmnames.append([vmname, v.conf(v.ssh_config(vm_name=vmname))])
 
         if len(vmnames) > 0:
             pickle.dump(vmnames, open(picklepath, "wb"))
+
         l = sorted([x[0] for x in vmnames])
         return l
     except subprocess.CalledProcessError as ex:
@@ -1266,7 +1283,6 @@ def get_working_directory(commandline):
         commandline.workingdir = None
 
     project_found = commandline.workingdir is not None
-
     if project_found is True:
         os.chdir(str(commandline.workingdir))
         retname = os.path.basename(str(commandline.workingdir))
@@ -1381,6 +1397,7 @@ def localize_config(commandline, vmhostosx):
     # for cf in get_vm_configs():
     # hosts.write(cf["Host"] + " ansible_ssh_host=" + cf["HostName"] + " ansible_ssh_port=22\n")
     vmnames = get_vm_names()
+
     for name in vmnames:
         try:
             hostip = str(socket.gethostbyname(name + ".a8.nl"))
@@ -1389,12 +1406,14 @@ def localize_config(commandline, vmhostosx):
             hosts.write(name + " ansible_ssh_host=" + name + ".a8.nl ansible_ssh_port=22\n")
 
     hosts.write("\n[masters]\n")
+
     for name in vmnames:
         hosts.write(name + "\n")
         break
 
     cnt = 0
     hosts.write("\n[etcd]\n")
+
     for name in vmnames:
         if cnt == 1:
             hosts.write(name + "\n")
@@ -1403,6 +1422,7 @@ def localize_config(commandline, vmhostosx):
 
     cnt = 0
     hosts.write("\n[nodes]\n")
+
     for name in vmnames:
         if cnt > 0:
             hosts.write(name + "\n")
@@ -1410,17 +1430,20 @@ def localize_config(commandline, vmhostosx):
         cnt += 1
 
     hosts.write("\n[all]\n")
+
     for name in vmnames:
         hosts.write(name + "\n")
 
     hosts.write("\n[all_groups:children]\nmasters\netcd\nnodes\n")
     hosts.write("\n[coreos]\n")
+
     for name in vmnames:
         hosts.write(name + "\n")
 
     hosts.write("\n[coreos:vars]\n")
     hosts.write("ansible_ssh_user=core\n")
     hosts.write("ansible_python_interpreter=\"PATH=/home/core/bin:$PATH python\"\n")
+
     hosts.flush()
     hosts.close()
     cwd = os.getcwd()
@@ -1520,9 +1543,11 @@ def print_ctl_cmd(name, systemcmd, shouldhaveword):
     """
     kunits = set()
     header = None
+
     for line in remote_cmd(name + '.a8.nl', systemcmd, "core", keypath=get_keypaths()).split("\n"):
         if header is None:
             header = line
+
         for word in line.split():
             for sw in shouldhaveword:
                 if sw in word:
@@ -1565,6 +1590,7 @@ def sed(oldstr, newstr, infile):
 
     with open(infile, "w") as f:
         f.truncate()
+
         for line in linelist:
             f.writelines(line)
 
@@ -1575,7 +1601,6 @@ def set_gateway_and_coreostoken(commandline):
     @return: None
     """
     default_gateway = get_default_gateway()
-
     if default_gateway is None:
         warning(commandline.command, "default gateway could not be found")
 
@@ -1668,7 +1693,7 @@ def unzip(source_filename):
         raise FileExistsError(extracted_dir + " not created")
 
 
-def write_config_from_template(commandline, ntl, vmhostosx):
+def write_config_from_template(commandline, ntl, vmhostosx, memory=None, cpus=None):
     """
     @type commandline: VagrantArguments
     @type ntl: str, unicode
@@ -1676,6 +1701,7 @@ def write_config_from_template(commandline, ntl, vmhostosx):
     @return: None
     """
     node = open(ntl).read()
+    node = node.replace("<cloud-provider>", "vagrant")
 
     if vmhostosx:
         masterip = "192.168.14.41"
@@ -1685,6 +1711,12 @@ def write_config_from_template(commandline, ntl, vmhostosx):
         masterip = "192.168.14.51"
         node = node.replace("<master-private-ip>", masterip)
         node = node.replace("<name-node>", "node1.a8.nl")
+
+    if memory is not None:
+        node = node.replace("<node-memory>", str(memory))
+
+    if cpus is not None:
+        node = node.replace("<node-cpus>", str(cpus))
 
     info(commandline.command, "master-private-ip: " + masterip)
     config = ntl.replace(".tmpl", "")
@@ -1719,5 +1751,7 @@ def write_new_tokens(vmhostosx):
     else:
         tlin = tokenpath("linux")
         open(tlin, "w").write(token)
+
+
 if __name__ == "__main__":
     main()

@@ -295,6 +295,9 @@ def cmd_createproject_driver(commandline, name, project_found):
     except BaseException as be:
         if commandline.workingdir and os.path.exists(str(commandline.workingdir)):
             shutil.rmtree(str(commandline.workingdir))
+            warning(commandline.command, str(be))
+            abort("project destroyed")
+            exit(1)
 
         warning(commandline.command, str(be))
 
@@ -1305,7 +1308,7 @@ def host_osx():
     return vmhostosx
 
 
-def input_vagrant_parameters(commandline, numcpus=8, gui=False, instances=4, memory=2048, confirmed=False, deleteoldfiles=False):
+def input_vagrant_parameters(commandline, numcpus=8, gui=False, instances=2, memory=2048, confirmed=False, deleteoldfiles=False):
     """
     @type commandline: VagrantArguments
     @type numcpus : int

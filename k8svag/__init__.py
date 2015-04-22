@@ -351,7 +351,7 @@ def cmd_driver_vagrant(commandline):
 
     project_found, name = get_working_directory(commandline)
     project_displayname = "Vagrant Kubernetes Cluster"
-    if not project_found and commandline.command != "createproject":
+    if not project_found and commandline.command != "createproject" and commandline.command != "restartvmware":
         abort(commandline.command, "A k8svag environment is required.Run 'k8svag createproject' or \nchange to a directory with a 'Vagrantfile' and '.cl' folder in it.")
     else:
         if commandline.command not in ["createproject"]:

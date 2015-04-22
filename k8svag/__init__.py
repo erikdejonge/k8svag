@@ -1480,7 +1480,7 @@ def prepare_config(func_extra_config=None):
 
     if vmhostosx is True:
         provider = get_provider()
-
+        cp("./roles/coreos-bootstrap/files/bootstraposx.txt", "./roles/coreos-bootstrap/files/bootstrap.sh")
         echo("192.168.14.4", "./config/startip.txt")
         echo("core", "./config/basehostname.txt")
         echo("f294d901-f14b-4370-9a43-ddb2cdb1ad02", "./config/updatetoken.txt")
@@ -1489,7 +1489,7 @@ def prepare_config(func_extra_config=None):
         sed("core.yml", "node.yml", "Vagrantfile")
     else:
         provider = get_provider()
-
+        cp("./roles/coreos-bootstrap/files/bootstraplinux.txt", "./roles/coreos-bootstrap/files/bootstrap.sh")
         echo("192.168.14.5", "./config/startip.txt")
         echo("node", "./config/basehostname.txt")
         echo("3a1f12c5-de6a-4ca9-9357-579598038cd8", "./config/updatetoken.txt")

@@ -293,16 +293,7 @@ def cmd_createproject_driver(commandline, name, project_found):
         cmd_createproject(commandline)
         cmd_run("vagrant halt")
     except BaseException as be:
-        if commandline.workingdir and os.path.exists(str(commandline.workingdir)):
-            shutil.rmtree(str(commandline.workingdir))
-            warning(commandline.command, str(be))
-            abort("project destroyed")
-            exit(1)
-
-        warning(commandline.command, str(be))
-
-        if not isinstance(be, KeyboardInterrupt):
-            raise
+        abort(commandline.command, str(be))
 
     try_cnt = 0
     while try_cnt < 5:

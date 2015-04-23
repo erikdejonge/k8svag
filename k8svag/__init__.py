@@ -261,6 +261,41 @@ def cmd_connect_ssh(server):
                 shell(cmd)
 
 
+def pickle_save(commandline, name, o):
+    """
+    @type commandline: VagrantArguments
+    @type name: str
+    @type o: dict, list, int, float
+    @return: None
+    """
+    info(commandline.command, "saving pickle " + str(name))
+    picklepath = os.path.join(str(commandline.workingdir), ".k8svag")
+    ppath = os.path.join(picklepath, name)
+    dirname = os.path.dirname(ppath)
+
+    if len(dirname) > 0:
+        if not os.path.exists(dirname):
+            os.makedirs(dirname, exist_ok=True)
+
+    pickle.dump(o, open(ppath, "wb"))
+
+
+def pickle_load(commandline, name):
+    """
+    @type commandline: VagrantArguments
+    @type name: str
+    @return: dict, list, int, float
+    """
+    info(commandline.command, "saving pickle " + str(name))
+    picklepath = os.path.join(str(commandline.workingdir), ".k8svag")
+    ppath = os.path.join(picklepath, name)
+
+    if not os.path.exists(ppath):
+        raise FileExistsError(ppath)
+
+    return pickle.load(open(ppath, "rb"))
+
+
 def cmd_createproject(commandline):
     """
     @type commandline: VagrantArguments
@@ -269,6 +304,15 @@ def cmd_createproject(commandline):
     gui, numinstance, memory, numcpu, name, deletefiles = input_vagrant_parameters(commandline)
     ensure_project_folder(commandline, name, deletefiles)
     commandline = set_working_dir(commandline, name)
+    savedata = {"gui": gui,
+                "numinstance": numinstance,
+                "memory": memory,
+                "numcpu": numcpu,
+                "name": name,
+                "deletefiles": deletefiles,
+                "commandline.workingdir": commandline.workingdir}
+
+    pickle_save(commandline, "vmdata", savedata)
     download_and_unzip_k8svagrant_project(commandline)
     configure_generic_cluster_files_for_this_machine(commandline, gui, numinstance, memory, numcpu)
     cmd_run("vagrant box update")
@@ -692,11 +736,12 @@ def cmd_reset(commandline, wait=None):
     @type wait: str, None
     @return: None
     """
+    vmdata = pickle_load(commandline, "vmdata")
     vmhostosx = is_osx()
     ntl = "configscripts/node.tmpl.yml"
-    write_config_from_template(commandline, ntl, vmhostosx)
+    write_config_from_template(commandline, ntl, vmhostosx, vmdata["memory"], vmdata["numcpu"])
     ntl = "configscripts/master.tmpl.yml"
-    write_config_from_template(commandline, ntl, vmhostosx)
+    write_config_from_template(commandline, ntl, vmhostosx, vmdata["memory"], vmdata["numcpu"])
     write_new_tokens(vmhostosx)
     cmd_run("rm -f " + os.path.join(os.getcwd(), "./configscripts") + "/user-data*")
     info(commandline.command, "replace cloudconfiguration, checking vms are up")
@@ -1330,7 +1375,7 @@ def input_vagrant_parameters(commandline, numcpus=8, gui=False, instances=2, mem
 
             if os.path.exists(fp):
                 if len(os.listdir(fp)) > 0:
-                    deleteoldfiles = query_yes_no("force delete all files in directory:", fp, default=deleteoldfiles, force=commandline.force)
+                    deleteoldfiles = query_yes_no(["force delete all files in directory:", fp], default=deleteoldfiles, force=commandline.force)
 
             numcpus = doinput("cpus per instance", default=numcpus, force=commandline.force)
             try:
@@ -1457,13 +1502,14 @@ def localize_config(commandline, vmhostosx):
     if not os.path.exists(ntl):
         console_error_exit("configscripts/node.tmpl.yml not found", print_stack=True)
 
-    write_config_from_template(commandline, ntl, vmhostosx)
+    vmdata = pickle_load(commandline, "vmdata")
+    write_config_from_template(commandline, ntl, vmhostosx, vmdata["memory"], vmdata["numcpu"])
     ntl = os.path.join(cwd, "configscripts/master.tmpl.yml")
 
     if not os.path.exists(ntl):
         console_error_exit("configscripts/master.tmpl.yml not found", print_stack=True)
 
-    write_config_from_template(commandline, ntl, vmhostosx)
+    write_config_from_template(commandline, ntl, vmhostosx, vmdata["memory"], vmdata["numcpu"])
     return True
 
 
@@ -1561,7 +1607,7 @@ def print_ctl_cmd(name, systemcmd, shouldhaveword):
                         break
 
     kunits = list(kunits)
-    kunits.sort(key=lambda x: x.split()[0])
+    kunits.sort(key=lambda xx: xx.split()[0])
 
     with Info(systemcmd) as groupinfo:
         for line in kunits:

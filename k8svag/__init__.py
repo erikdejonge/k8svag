@@ -429,6 +429,11 @@ def cmd_kubectl(commandline):
     kubectl = os.path.join(kubectl, "kubectl")
 
     if not os.path.exists(kubectl):
+
+        os.makedirs(os.path.dirname(kubectl), exist_ok=True)
+        download("https://storage.googleapis.com/kubernetes-release/release/v0.15.0/bin/darwin/amd64/kubectl", kubectl)
+
+    if not os.path.exists(kubectl):
         abort(commandline.command, "kubectl not found: " + str(kubectl))
 
     if not os.access(kubectl, os.X_OK):

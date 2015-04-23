@@ -49,7 +49,7 @@ class VagrantArguments(BaseArguments):
         self.wait = 0
         self.projectname = ""
         doc = """
-            Vagrant cluster management by Active8 NL 🇳🇱
+            Vagrant cluster management by Active8 NL
             erik@a8.nl
 
             Usage:
@@ -294,7 +294,6 @@ def cmd_createproject_driver(commandline, name, project_found):
         cmd_run("vagrant halt")
     except BaseException as be:
         abort(commandline.command, str(be))
-
     try_cnt = 0
     while try_cnt < 5:
         try:
@@ -345,6 +344,7 @@ def cmd_driver_vagrant(commandline):
 
     project_found, name = get_working_directory(commandline)
     project_displayname = "Vagrant Kubernetes Cluster"
+
     if not project_found and commandline.command != "createproject" and commandline.command != "restartvmware":
         abort(commandline.command, "A k8svag environment is required.Run 'k8svag createproject' or \nchange to a directory with a 'Vagrantfile' and '.cl' folder in it.")
     else:
@@ -429,7 +429,6 @@ def cmd_kubectl(commandline):
     kubectl = os.path.join(kubectl, "kubectl")
 
     if not os.path.exists(kubectl):
-
         os.makedirs(os.path.dirname(kubectl), exist_ok=True)
         download("https://storage.googleapis.com/kubernetes-release/release/v0.15.0/bin/darwin/amd64/kubectl", kubectl)
 
@@ -487,7 +486,7 @@ def cmd_kubectl(commandline):
                 info("get options", "Possible resources include\n- pods (po)\n- replication controllers (rc)\n- services (svc)\n- minions (mi)\n- events (ev)")
                 execute = False
 
-            all = False
+            myall = False
 
             for i in restargs:
                 resources = {'rc': 'replication controllers',
@@ -499,7 +498,7 @@ def cmd_kubectl(commandline):
 
                 if i == "all":
                     execute = False
-                    all = True
+                    myall = True
 
                     for cnt, k in enumerate(reskeys):
                         kubectl1 = kubectl + k
@@ -508,7 +507,7 @@ def cmd_kubectl(commandline):
                         if cnt < len(reskeys) - 1:
                             print()
 
-            if all is False:
+            if myall is False:
                 kubectl += " ".join(restargs)
 
         elif kubectlcmd == "deleteall":
@@ -942,10 +941,12 @@ def configure_generic_cluster_files_for_this_machine(commandline, gui, numinstan
     """
     if not hasattr(commandline, "workingdir"):
         console_warning("workingdir not set")
+
         raise SystemExit()
 
     if commandline.workingdir is None:
         console_warning("workingdir is None")
+
         raise SystemExit()
 
     os.chdir(str(commandline.workingdir))
@@ -958,6 +959,7 @@ def configure_generic_cluster_files_for_this_machine(commandline, gui, numinstan
 
     if not path.exists(vagrantfile + ".tpl.rb"):
         console_warning("no Vagrantfile in directory")
+
         raise SystemExit()
 
     if not path.exists(picklepath):
@@ -1044,6 +1046,7 @@ def download_and_unzip_k8svagrant_project(commandline):
             except zipfile.BadZipFile as zex:
                 console_exception(zex)
                 console_warning("could not unzip clusterfiles", print_stack=True)
+
                 raise SystemExit()
 
 
@@ -1068,16 +1071,19 @@ def ensure_project_folder(commandline, name, deletefiles):
         os.mkdir(name)
     elif not os.path.isdir(name):
         abort(commandline.command, "workdir path is file")
+
         raise SystemExit()
     elif not len(os.listdir(name)) == 0:
         if deletefiles is False:
             abort(commandline.command, "path not empty")
+
             raise SystemExit()
         else:
             delete_directory(name, [])
 
     if not len(os.listdir(name)) == 0:
         abort(commandline.command, "path not empty", stack=True)
+
         raise SystemExit()
 
 
@@ -1636,6 +1642,7 @@ def set_working_dir(commandline, projectname):
             commandline.workingdir = os.getcwd()
             if os.path.basename(os.path.dirname(str(commandline.workingdir))) != projectname:
                 console_warning(projectname, os.path.basename(os.path.dirname(str(commandline.workingdir))))
+
                 raise AssertionError("projectname and dirname are different")
 
     if commandline.workingdir is None:
@@ -1673,6 +1680,7 @@ def unzip(source_filename):
 
     if not os.path.exists(zippath):
         console("zipfile doesn't exist", zippath, color="red")
+
         raise FileNotFoundError(zippath)
 
     with zipfile.ZipFile(zippath) as zf:
@@ -1689,14 +1697,17 @@ def unzip(source_filename):
         # os.remove(os.path.join(os.getcwd(), os.path.join(dest_dir, "master.zip")))
     else:
         console_warning(extracted_dir + " not created")
+
         raise FileExistsError(extracted_dir + " not created")
 
 
-def write_config_from_template(commandline, ntl, vmhostosx, memory=None, cpus=None):
+def write_config_from_template(commandline, ntl, vmhostosx, memory, cpus):
     """
     @type commandline: VagrantArguments
-    @type ntl: str, unicode
+    @type ntl: str
     @type vmhostosx: bool
+    @type memory: int
+    @type cpus: int
     @return: None
     """
     node = open(ntl).read()
@@ -1711,8 +1722,10 @@ def write_config_from_template(commandline, ntl, vmhostosx, memory=None, cpus=No
         node = node.replace("<master-private-ip>", masterip)
         node = node.replace("<name-node>", "node1.a8.nl")
 
-    if memory is not None:
-        node = node.replace("<node-memory>", str(memory))
+    if memory is None or cpus is None:
+        raise RuntimeError("memory is None")
+
+    node = node.replace("<node-memory>", str(memory))
 
     if cpus is not None:
         node = node.replace("<node-cpus>", str(cpus))
